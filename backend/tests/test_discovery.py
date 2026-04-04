@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -17,17 +16,13 @@ def _write_valid_bench(bench_dir: Path) -> None:
     (bench_dir / "sites" / "mysite").mkdir(parents=True)
     (bench_dir / "env").mkdir(parents=True)
     (bench_dir / "Procfile").write_text("web: bench serve --port 8000\n", encoding="utf-8")
-    (bench_dir / "apps" / "frappe" / "frappe" / "__version__.py").write_text(
+    (bench_dir / "apps" / "frappe" / "frappe" / "__init__.py").write_text(
         '__version__ = "15.1.0"\n',
         encoding="utf-8",
     )
-    (bench_dir / "apps.txt").write_text("frappe\nerpnext\n", encoding="utf-8")
-    (bench_dir / "sites" / "mysite" / "site_config.json").write_text(
-        json.dumps({"installed_apps": ["frappe", "erpnext"]}),
-        encoding="utf-8",
-    )
+    (bench_dir / "sites" / "apps.txt").write_text("frappe\nerpnext\n", encoding="utf-8")
     (bench_dir / "apps" / "erpnext" / "erpnext").mkdir(parents=True)
-    (bench_dir / "apps" / "erpnext" / "erpnext" / "__version__.py").write_text(
+    (bench_dir / "apps" / "erpnext" / "erpnext" / "__init__.py").write_text(
         '__version__ = "15.0.1"\n',
         encoding="utf-8",
     )
@@ -110,11 +105,16 @@ def test_get_bench_detail_reads_sites_apps_and_procfile(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Detail view aggregates site config, app versions, Procfile, and process status."""
+    """Detail view uses ``bench list-apps`` for per-site apps, Procfile, and status."""
     bench = tmp_path / "detail-bench"
     _write_valid_bench(bench)
 
     monkeypatch.setattr(discovery.process, "get_bench_status", lambda _p: ("running", 1234))
+    monkeypatch.setattr(
+        discovery,
+        "_list_installed_app_names_via_bench",
+        lambda _b, _s: ["frappe", "erpnext"],
+    )
 
     detail = discovery.get_bench_detail(bench)
     assert detail.name == "detail-bench"
@@ -126,6 +126,100 @@ def test_get_bench_detail_reads_sites_apps_and_procfile(
     assert detail.ports["web"] == "bench serve --port 8000"
     assert {site.name for site in detail.sites} == {"mysite"}
     assert {app.name for app in detail.apps} == {"frappe", "erpnext"}
+    mysite = next(s for s in detail.sites if s.name == "mysite")
+    assert {(a.name, a.version) for a in mysite.installed_apps} == {
+        ("frappe", "15.1.0"),
+        ("erpnext", "15.0.1"),
+    }
+
+
+def test_read_version_py_accepts_double_and_single_quoted_assignments(
+    tmp_path: Path,
+) -> None:
+    """``_read_version_py`` parses ``__version__`` whether the value uses ``\"`` or ``'``."""
+    double_quoted = tmp_path / "v_double.py"
+    double_quoted.write_text('__version__ = "15.2.3"\n', encoding="utf-8")
+    assert discovery._read_version_py(double_quoted) == "15.2.3"
+
+    single_quoted = tmp_path / "v_single.py"
+    single_quoted.write_text("__version__ = '14.9.0'\n", encoding="utf-8")
+    assert discovery._read_version_py(single_quoted) == "14.9.0"
+
+
+def test_count_bench_app_entries_prefers_sites_apps_txt_and_fallbacks(tmp_path: Path) -> None:
+    """App count uses ``sites/apps.txt``, then root ``apps.txt``, then ``sites/apps.json``."""
+    b1 = tmp_path / "bench1"
+    (b1 / "sites").mkdir(parents=True)
+    (b1 / "sites" / "apps.txt").write_text("a\nb\n", encoding="utf-8")
+    assert discovery._count_bench_app_entries(b1) == 2
+
+    b2 = tmp_path / "bench2"
+    b2.mkdir()
+    (b2 / "apps.txt").write_text("x\n", encoding="utf-8")
+    assert discovery._count_bench_app_entries(b2) == 1
+
+    b3 = tmp_path / "bench3"
+    (b3 / "sites").mkdir(parents=True)
+    (b3 / "sites" / "apps.json").write_text('["frappe", "erpnext"]', encoding="utf-8")
+    assert discovery._count_bench_app_entries(b3) == 2
+
+
+def test_parse_bench_list_apps_stdout_strips_lines() -> None:
+    """``_parse_bench_list_apps_stdout`` collects one app name per non-empty line."""
+    raw = "  frappe  \n\nerpnext\n"
+    assert discovery._parse_bench_list_apps_stdout(raw) == ["frappe", "erpnext"]
+
+
+def test_site_installed_apps_follows_bench_list_apps_not_filesystem(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Installed app names come from ``bench list-apps``, not ``apps.txt`` on disk."""
+    bench = tmp_path / "cfg-bench"
+    _write_valid_bench(bench)
+    (bench / "sites" / "mysite" / "apps.txt").write_text(
+        "frappe\nerpnext\nphantom\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(discovery.process, "get_bench_status", lambda _p: ("stopped", None))
+    monkeypatch.setattr(
+        discovery,
+        "_list_installed_app_names_via_bench",
+        lambda _b, _s: ["frappe"],
+    )
+
+    detail = discovery.get_bench_detail(bench)
+    mysite = next(s for s in detail.sites if s.name == "mysite")
+    assert [a.name for a in mysite.installed_apps] == ["frappe"]
+
+
+def test_get_bench_detail_empty_when_bench_list_apps_returns_nothing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If ``bench list-apps`` yields no apps, the site has an empty list (no exception)."""
+    bench = tmp_path / "no-site-apps"
+    (bench / "apps" / "frappe" / "frappe").mkdir(parents=True)
+    (bench / "sites" / "emptysite").mkdir(parents=True)
+    (bench / "env").mkdir(parents=True)
+    (bench / "Procfile").write_text("web: bench serve --port 8000\n", encoding="utf-8")
+    (bench / "apps" / "frappe" / "frappe" / "__init__.py").write_text(
+        '__version__ = "15.1.0"\n',
+        encoding="utf-8",
+    )
+    (bench / "sites" / "apps.txt").write_text("frappe\n", encoding="utf-8")
+
+    monkeypatch.setattr(discovery.process, "get_bench_status", lambda _p: ("stopped", None))
+    monkeypatch.setattr(
+        discovery,
+        "_list_installed_app_names_via_bench",
+        lambda _b, _s: [],
+    )
+
+    detail = discovery.get_bench_detail(bench)
+    site = next(s for s in detail.sites if s.name == "emptysite")
+    assert site.installed_apps == []
 
 
 def test_scan_for_benches_logs_and_skips_on_permission_error(

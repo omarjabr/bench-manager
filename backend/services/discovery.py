@@ -1,5 +1,6 @@
 """Filesystem discovery for Frappe bench installations."""
 
+import asyncio
 import fnmatch
 import json
 import logging
@@ -12,7 +13,11 @@ from services import process
 
 logger = logging.getLogger(__name__)
 
-_VERSION_PATTERN = re.compile(r"__version__\s*=\s*[\"']([^\"']+)[\"']")
+# Match __version__ = "x.y" or __version__ = 'x.y' (single or double quotes).
+_VERSION_PATTERN = re.compile(
+    r"""__version__\s*=\s*(["'])(?P<ver>[^"']+)\1""",
+    re.MULTILINE,
+)
 
 
 def _path_matches_excluded(target: Path, patterns: list[str]) -> bool:
@@ -37,33 +42,51 @@ def _is_valid_bench_layout(bench_dir: Path) -> bool:
     )
 
 
+def _safe_resolve(path: Path) -> Path:
+    """Return ``path.resolve()`` or ``path`` if resolution fails."""
+    try:
+        return path.resolve()
+    except (OSError, RuntimeError):
+        return path
+
+
 def _read_version_py(version_file: Path) -> str:
-    """Parse ``__version__`` from a Frappe-style ``__version__.py`` file."""
-    text = version_file.read_text(encoding="utf-8")
+    """Parse a top-level ``__version__ = "…"`` assignment from a Python module file (e.g. ``__init__.py``)."""
+    resolved = _safe_resolve(version_file)
+    try:
+        text = resolved.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        logger.warning("Could not decode version file as UTF-8: %s (%s)", resolved, exc)
+        return "unknown"
+    text = text.lstrip("\ufeff")
     match = _VERSION_PATTERN.search(text)
     if match:
-        return match.group(1)
+        return match.group("ver")
+    logger.debug("No __version__ assignment matched in %s", resolved)
     return "unknown"
 
 
 def _read_frappe_version(bench_dir: Path) -> str:
-    """Read the Frappe framework version for a bench."""
-    version_file = bench_dir / "apps" / "frappe" / "frappe" / "__version__.py"
+    """Read the Frappe framework version for a bench from ``apps/frappe/frappe/__init__.py``."""
+    try:
+        resolved_bench = bench_dir.resolve()
+    except (OSError, RuntimeError):
+        resolved_bench = bench_dir
+    version_file = resolved_bench / "apps" / "frappe" / "frappe" / "__init__.py"
+    resolved_version_path = _safe_resolve(version_file)
     try:
         return _read_version_py(version_file)
     except (FileNotFoundError, PermissionError, OSError) as exc:
-        logger.warning("Could not read Frappe version in %s: %s", bench_dir, exc)
+        logger.warning("Could not read Frappe version in %s: %s", resolved_bench, exc)
+        logger.debug(
+            "Frappe __init__.py path attempted (resolved): %s",
+            resolved_version_path,
+        )
         return "unknown"
 
 
-def _count_apps_from_apps_txt(bench_dir: Path) -> int:
-    """Count non-empty, non-comment lines in ``apps.txt``."""
-    apps_txt = bench_dir / "apps.txt"
-    try:
-        text = apps_txt.read_text(encoding="utf-8")
-    except (FileNotFoundError, PermissionError, OSError) as exc:
-        logger.warning("Could not read apps.txt in %s: %s", bench_dir, exc)
-        return 0
+def _count_non_empty_app_lines(text: str) -> int:
+    """Count non-empty, non-comment lines in an ``apps.txt``-style file."""
     count = 0
     for line in text.splitlines():
         stripped = line.strip()
@@ -71,6 +94,60 @@ def _count_apps_from_apps_txt(bench_dir: Path) -> int:
             continue
         count += 1
     return count
+
+
+def _count_apps_from_apps_json(path: Path) -> int | None:
+    """Return app count from ``sites/apps.json`` if present and valid JSON, else ``None``."""
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (FileNotFoundError, PermissionError, OSError):
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        logger.warning("Invalid JSON in %s: %s", path, exc)
+        return None
+    if isinstance(data, list):
+        return sum(1 for item in data if isinstance(item, str) and item.strip())
+    if isinstance(data, dict):
+        return len(data)
+    return None
+
+
+def _count_bench_app_entries(bench_dir: Path) -> int:
+    """
+    Count apps installed on the bench.
+
+    Tries, in order: ``sites/apps.txt`` (current bench layout), legacy ``apps.txt`` at the bench
+    root, then ``sites/apps.json``. Missing files are skipped without a warning; only permission
+    errors and invalid JSON produce warnings.
+    """
+    try:
+        resolved = bench_dir.resolve()
+    except (OSError, RuntimeError):
+        resolved = bench_dir
+    sites_dir = resolved / "sites"
+
+    for path in (sites_dir / "apps.txt", resolved / "apps.txt"):
+        try:
+            text = path.read_text(encoding="utf-8")
+            return _count_non_empty_app_lines(text)
+        except FileNotFoundError:
+            logger.debug("Bench app list not found: %s", _safe_resolve(path))
+            continue
+        except (PermissionError, OSError) as exc:
+            logger.warning("Could not read bench app list %s: %s", path, exc)
+            return 0
+
+    json_count = _count_apps_from_apps_json(sites_dir / "apps.json")
+    if json_count is not None:
+        return json_count
+
+    logger.debug(
+        "No sites/apps.txt, apps.txt, or sites/apps.json for app count under %s",
+        resolved,
+    )
+    return 0
 
 
 def _list_site_names(bench_dir: Path) -> list[str]:
@@ -90,13 +167,100 @@ def _list_site_names(bench_dir: Path) -> list[str]:
 
 
 def _read_app_version(bench_dir: Path, app_name: str) -> str:
-    """Read version string for an app under ``apps/<name>/``."""
-    version_file = bench_dir / "apps" / app_name / app_name / "__version__.py"
+    """Read ``__version__`` from ``apps/<name>/<name>/__init__.py``."""
+    try:
+        resolved_bench = bench_dir.resolve()
+    except (OSError, RuntimeError):
+        resolved_bench = bench_dir
+    version_file = resolved_bench / "apps" / app_name / app_name / "__init__.py"
+    resolved_version_path = _safe_resolve(version_file)
     try:
         return _read_version_py(version_file)
     except (FileNotFoundError, PermissionError, OSError) as exc:
-        logger.warning("Could not read version for app %s in %s: %s", app_name, bench_dir, exc)
+        logger.warning(
+            "Could not read version for app %s in %s: %s",
+            app_name,
+            resolved_bench,
+            exc,
+        )
+        logger.debug(
+            "App __init__.py path attempted (resolved): %s",
+            resolved_version_path,
+        )
         return "unknown"
+
+
+def _parse_bench_list_apps_stdout(stdout: str) -> list[str]:
+    """Turn ``bench list-apps`` stdout into a list of app names (one non-empty line per app)."""
+    names: list[str] = []
+    for line in stdout.splitlines():
+        name = line.strip()
+        if name:
+            names.append(name)
+    return names
+
+
+async def _bench_list_app_names_async(bench_dir: Path, site_name: str) -> list[str]:
+    """Run ``bench --site <site> list-apps`` in ``bench_dir`` and return app names from stdout."""
+    try:
+        resolved_bench = bench_dir.resolve()
+    except (OSError, RuntimeError):
+        resolved_bench = bench_dir
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "bench",
+            "--site",
+            site_name,
+            "list-apps",
+            cwd=str(resolved_bench),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except (FileNotFoundError, PermissionError, OSError) as exc:
+        logger.warning(
+            "Could not start bench list-apps for site %s in %s: %s",
+            site_name,
+            resolved_bench,
+            exc,
+        )
+        return []
+    try:
+        stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=120.0)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        logger.warning(
+            "bench list-apps timed out for site %s in %s",
+            site_name,
+            resolved_bench,
+        )
+        return []
+    if proc.returncode != 0:
+        err = stderr_b.decode("utf-8", errors="replace").strip()
+        logger.warning(
+            "bench list-apps failed for site %s (exit %s): %s",
+            site_name,
+            proc.returncode,
+            err,
+        )
+        return []
+    text = stdout_b.decode("utf-8", errors="replace")
+    return _parse_bench_list_apps_stdout(text)
+
+
+def _list_installed_app_names_via_bench(bench_dir: Path, site_name: str) -> list[str]:
+    """Synchronous wrapper for :func:`_bench_list_app_names_async` (uses ``asyncio.run``)."""
+    try:
+        return asyncio.run(_bench_list_app_names_async(bench_dir, site_name))
+    except RuntimeError as exc:
+        if "asyncio.run() cannot be called from a running event loop" in str(exc):
+            logger.warning(
+                "bench list-apps skipped for site %s (nested event loop): %s",
+                site_name,
+                exc,
+            )
+            return []
+        raise
 
 
 def _parse_procfile(procfile_path: Path) -> dict[str, str]:
@@ -119,27 +283,16 @@ def _parse_procfile(procfile_path: Path) -> dict[str, str]:
 
 
 def _site_installed_apps(bench_dir: Path, site_name: str) -> list[AppInfo]:
-    """Load ``installed_apps`` from ``site_config.json`` for a site."""
-    config_path = bench_dir / "sites" / site_name / "site_config.json"
+    """Resolve installed apps for a site via ``bench --site <site> list-apps`` and read each version."""
     try:
-        raw = config_path.read_text(encoding="utf-8")
-    except (FileNotFoundError, PermissionError, OSError) as exc:
-        logger.warning("Could not read site_config.json for %s: %s", site_name, exc)
-        return []
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        logger.warning("Invalid JSON in %s: %s", config_path, exc)
-        return []
-    installed = data.get("installed_apps")
-    if not isinstance(installed, list):
-        return []
+        resolved_bench = bench_dir.resolve()
+    except (OSError, RuntimeError):
+        resolved_bench = bench_dir
+    app_names = _list_installed_app_names_via_bench(resolved_bench, site_name)
     apps: list[AppInfo] = []
-    for item in installed:
-        if not isinstance(item, str):
-            continue
-        version = _read_app_version(bench_dir, item)
-        apps.append(AppInfo(name=item, version=version))
+    for name in app_names:
+        version = _read_app_version(resolved_bench, name)
+        apps.append(AppInfo(name=name, version=version))
     return apps
 
 
@@ -195,7 +348,7 @@ def scan_for_benches(root: Path) -> list[BenchSummary]:
             frappe_version = _read_frappe_version(child)
             site_names = _list_site_names(child)
             site_count = len(site_names)
-            app_count = _count_apps_from_apps_txt(child)
+            app_count = _count_bench_app_entries(child)
             status, _pid = process.get_bench_status(child)
 
             summaries.append(
@@ -223,7 +376,7 @@ def get_bench_detail(bench_path: Path) -> BenchDetail:
     frappe_version = _read_frappe_version(resolved)
     site_names = _list_site_names(resolved)
     site_count = len(site_names)
-    app_count = _count_apps_from_apps_txt(resolved)
+    app_count = _count_bench_app_entries(resolved)
     status, pid = process.get_bench_status(resolved)
 
     sites = [

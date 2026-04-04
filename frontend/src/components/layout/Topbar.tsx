@@ -17,7 +17,12 @@ function usePageTitle(): string {
   return "Bench Manager"
 }
 
-export function Topbar() {
+type TopbarProps = {
+  searchQuery: string
+  onSearchChange: (value: string) => void
+}
+
+export function Topbar({ searchQuery, onSearchChange }: TopbarProps) {
   const title = usePageTitle()
   const isMobile = useIsMobile()
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
@@ -45,6 +50,8 @@ export function Topbar() {
           placeholder="Search benches…"
           aria-label="Search benches"
           className="h-9 w-full"
+          value={searchQuery}
+          onChange={(event) => onSearchChange(event.target.value)}
         />
       </div>
       <div className="ml-auto flex min-w-0 shrink-0 items-center gap-2">

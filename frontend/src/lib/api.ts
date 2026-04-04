@@ -4,6 +4,24 @@ const api = axios.create({
   baseURL: "http://localhost:8000",
 })
 
+/** Extracts a user-facing message from an API or network error. */
+export function getApiErrorMessage(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data
+    if (typeof data === "object" && data !== null && "detail" in data) {
+      const detail = (data as { detail: unknown }).detail
+      if (typeof detail === "string") {
+        return detail
+      }
+    }
+    return error.message
+  }
+  if (error instanceof Error) {
+    return error.message
+  }
+  return "Something went wrong"
+}
+
 export type BenchStatus = "running" | "stopped" | "unknown"
 
 export type AppInfo = {

@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { useLayoutEffect } from "react"
+import { useLayoutEffect, useState } from "react"
 import { BrowserRouter, Outlet, Route, Routes } from "react-router-dom"
 
 import { Sidebar } from "@/components/layout/Sidebar"
 import { Topbar } from "@/components/layout/Topbar"
+import { Toaster } from "@/components/ui/sonner"
 import BenchDetail from "@/pages/BenchDetail"
 import Dashboard from "@/pages/Dashboard"
 import Settings from "@/pages/Settings"
@@ -21,13 +22,18 @@ function ThemeSync() {
 }
 
 function AppShell() {
+  const [searchQuery, setSearchQuery] = useState("")
+
   return (
     <div className="flex min-h-screen w-full">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar />
+        <Topbar
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+        />
         <div className="flex-1 p-6">
-          <Outlet />
+          <Outlet context={{ searchQuery, setSearchQuery }} />
         </div>
       </div>
     </div>
@@ -39,6 +45,7 @@ export function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <ThemeSync />
+        <Toaster />
         <Routes>
           <Route element={<AppShell />}>
             <Route path="/" element={<Dashboard />} />
