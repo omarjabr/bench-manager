@@ -162,7 +162,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "hidden min-h-screen shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col",
+        "hidden h-full shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col",
         sidebarOpen ? "w-56" : "w-14"
       )}
     >

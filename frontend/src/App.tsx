@@ -25,14 +25,14 @@ function AppShell() {
   const [searchQuery, setSearchQuery] = useState("")
 
   return (
-    <div className="flex min-h-screen w-full">
+    <div className="flex h-screen min-h-0 w-full overflow-hidden">
       <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <Topbar
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
         />
-        <div className="flex-1 p-6">
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">
           <Outlet context={{ searchQuery, setSearchQuery }} />
         </div>
       </div>
