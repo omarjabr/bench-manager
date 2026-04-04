@@ -1,0 +1,6 @@
+.cursor
+skills-lock.json
+
+node_modules
+
+pnpm-lock.yaml
