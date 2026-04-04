@@ -1,6 +1,10 @@
 """Shared WebSocket connection registry for operations streaming and bench broadcasts."""
 
+import logging
+
 from fastapi import WebSocket
+
+logger = logging.getLogger(__name__)
 
 
 class ConnectionManager:
@@ -19,13 +23,20 @@ class ConnectionManager:
         self._connections.pop(client_id, None)
 
     async def send(self, client_id: str, message: str) -> None:
-        """Send a text frame to a single client."""
+        """Send a text frame to a single client; drop silently if the client is gone."""
         connection = self._connections.get(client_id)
         if connection is None:
             return
-        await connection.send_text(message)
+        try:
+            await connection.send_text(message)
+        except Exception:
+            logger.debug("Dropping stale WebSocket for client %s", client_id, exc_info=True)
+            self._connections.pop(client_id, None)
 
     async def broadcast(self, message: str) -> None:
-        """Send a text frame to every connected client."""
-        for connection in list(self._connections.values()):
-            await connection.send_text(message)
+        """Send a text frame to every connected client; drop failures silently."""
+        for client_id in list(self._connections.keys()):
+            await self.send(client_id, message)
+
+
+connection_manager = ConnectionManager()

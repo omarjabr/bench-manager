@@ -93,23 +93,64 @@ def test_get_bench_status_stopped_when_no_supervisor(
 
 
 @pytest.mark.asyncio
-async def test_start_bench_invokes_bench_start(
+async def test_start_bench_uses_shutil_which_bench_with_new_session(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``start_bench`` launches ``bench start`` with the expected cwd."""
+    """``start_bench`` uses ``shutil.which("bench")`` when available."""
     bench = tmp_path / "bench-d"
     bench.mkdir()
 
     exec_mock = AsyncMock(return_value=MagicMock())
     monkeypatch.setattr(asyncio, "create_subprocess_exec", exec_mock)
+    monkeypatch.setattr(process.shutil, "which", lambda _cmd: "/usr/bin/bench")
 
     await process.start_bench(bench)
 
     exec_mock.assert_awaited_once()
     args, kwargs = exec_mock.call_args
-    assert args[0:2] == ("bench", "start")
+    assert args[0:2] == ("/usr/bin/bench", "start")
     assert kwargs["cwd"] == str(bench.resolve())
+    assert kwargs.get("start_new_session") is True
+
+
+@pytest.mark.asyncio
+async def test_start_bench_falls_back_to_local_bin_when_which_returns_none(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If ``which("bench")`` is None, use ``~/.local/bin/bench`` when that file exists."""
+    bench = tmp_path / "bench-local"
+    bench.mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    fallback = tmp_path / ".local" / "bin" / "bench"
+    fallback.parent.mkdir(parents=True)
+    fallback.touch()
+
+    exec_mock = AsyncMock(return_value=MagicMock())
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", exec_mock)
+    monkeypatch.setattr(process.shutil, "which", lambda _cmd: None)
+
+    await process.start_bench(bench)
+
+    exec_mock.assert_awaited_once()
+    args, _kwargs = exec_mock.call_args
+    assert args[0:2] == (str(fallback.resolve()), "start")
+
+
+@pytest.mark.asyncio
+async def test_start_bench_runtime_error_when_bench_not_found(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Raises when ``bench`` is not on PATH and ``~/.local/bin/bench`` is missing."""
+    bench = tmp_path / "bench-missing"
+    bench.mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(process.shutil, "which", lambda _cmd: None)
+
+    with pytest.raises(RuntimeError, match="bench command not found in PATH"):
+        await process.start_bench(bench)
 
 
 @pytest.mark.asyncio
@@ -136,7 +177,65 @@ async def test_stop_bench_terminates_matching_process_tree(
 
     child.terminate.assert_called_once()
     parent.terminate.assert_called_once()
-    wait_mock.assert_called_once()
+    assert wait_mock.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_stop_bench_sigkill_when_graceful_timeout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``stop_bench`` sends SIGKILL when processes remain after graceful wait."""
+    bench = tmp_path / "bench-kill"
+    bench.mkdir()
+
+    stubborn = MagicMock()
+    stubborn.is_running.return_value = False
+    parent = MagicMock()
+    parent.children.return_value = []
+    monkeypatch.setattr(process.psutil, "Process", MagicMock(return_value=parent))
+    monkeypatch.setattr(process, "get_bench_status", lambda _p: ("running", 100))
+
+    def wait_side_effect(procs, timeout):
+        if len(procs) == 1:
+            return ([], [stubborn])
+        return ([], [])
+
+    wait_mock = MagicMock(side_effect=wait_side_effect)
+    monkeypatch.setattr(process.psutil, "wait_procs", wait_mock)
+
+    await process.stop_bench(bench)
+
+    stubborn.kill.assert_called_once()
+    assert wait_mock.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_stop_bench_runtime_error_when_still_running_after_kill(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``stop_bench`` raises when a process remains alive after SIGKILL."""
+    bench = tmp_path / "bench-stubborn"
+    bench.mkdir()
+
+    stubborn = MagicMock()
+    stubborn.pid = 555
+    stubborn.is_running.return_value = True
+    parent = MagicMock()
+    parent.children.return_value = []
+    monkeypatch.setattr(process.psutil, "Process", MagicMock(return_value=parent))
+    monkeypatch.setattr(process, "get_bench_status", lambda _p: ("running", 101))
+
+    def wait_side_effect(procs, timeout):
+        if len(procs) == 1:
+            return ([], [stubborn])
+        return ([], [stubborn])
+
+    monkeypatch.setattr(process.psutil, "wait_procs", MagicMock(side_effect=wait_side_effect))
+
+    with pytest.raises(RuntimeError, match="still alive"):
+        await process.stop_bench(bench)
 
 
 @pytest.mark.asyncio

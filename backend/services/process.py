@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import shutil
 from pathlib import Path
 
 import psutil
@@ -46,20 +47,41 @@ def get_bench_status(bench_path: Path) -> tuple[BenchStatus, int | None]:
     return ("stopped", None)
 
 
+def resolve_bench_executable() -> Path:
+    """
+    Resolve the ``bench`` CLI: ``PATH`` via ``shutil.which``, then ``~/.local/bin/bench``.
+    """
+    which_path = shutil.which("bench")
+    if which_path:
+        return Path(which_path).resolve()
+    local_bin = Path.home() / ".local" / "bin" / "bench"
+    try:
+        resolved_local = local_bin.resolve()
+    except (OSError, RuntimeError):
+        resolved_local = local_bin
+    if resolved_local.is_file():
+        return resolved_local
+    raise RuntimeError(
+        "bench command not found in PATH. Make sure bench is installed and accessible."
+    )
+
+
 async def start_bench(bench_path: Path) -> None:
-    """Start ``bench start`` in the bench directory as a detached subprocess."""
+    """Start ``bench start`` with the bench directory as cwd (detached subprocess)."""
+    resolved = bench_path.resolve()
+    bench_exe = resolve_bench_executable()
     try:
         await asyncio.create_subprocess_exec(
-            "bench",
+            str(bench_exe),
             "start",
-            cwd=str(bench_path.resolve()),
+            cwd=str(resolved),
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
             start_new_session=True,
         )
     except OSError as exc:
-        logger.error("Failed to start bench at %s: %s", bench_path, exc)
-        raise
+        logger.error("Failed to start bench at %s: %s", resolved, exc)
+        raise RuntimeError(f"Failed to start bench at {resolved}: {exc}") from exc
 
 
 async def stop_bench(bench_path: Path) -> None:
@@ -69,8 +91,11 @@ async def stop_bench(bench_path: Path) -> None:
         return
     try:
         parent = psutil.Process(pid)
-    except psutil.Error:
-        return
+    except psutil.Error as exc:
+        raise RuntimeError(
+            f"Could not access bench supervisor process (PID {pid}): {exc}"
+        ) from exc
+
     children = parent.children(recursive=True)
     for child in children:
         try:
@@ -79,14 +104,27 @@ async def stop_bench(bench_path: Path) -> None:
             continue
     try:
         parent.terminate()
-    except psutil.Error:
-        return
-    gone, alive = psutil.wait_procs(children + [parent], timeout=5)
-    for p in alive:
+    except psutil.Error as exc:
+        raise RuntimeError(f"Could not signal bench supervisor (PID {pid}): {exc}") from exc
+
+    _, alive = psutil.wait_procs(children + [parent], timeout=5)
+    for proc in alive:
         try:
-            p.kill()
+            proc.kill()
         except psutil.Error:
             continue
+
+    _, still_alive = psutil.wait_procs(alive, timeout=2)
+    for proc in still_alive:
+        try:
+            if proc.is_running():
+                raise RuntimeError(
+                    f"Bench process tree still alive after SIGKILL (PID {proc.pid})"
+                )
+        except psutil.Error as exc:
+            raise RuntimeError(
+                f"Could not verify bench process termination (PID {getattr(proc, 'pid', '?')}): {exc}"
+            ) from exc
 
 
 async def restart_bench(bench_path: Path) -> None:

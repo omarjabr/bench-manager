@@ -11,6 +11,7 @@ import { NavLink } from "react-router-dom"
 
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent } from "@/components/ui/sheet"
+import { useBenchSocket } from "@/hooks/useBenchSocket"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
 import { useUiStore } from "@/stores/ui.store"
@@ -34,10 +35,12 @@ function SidebarNav({
   collapsed,
   toggleSidebar,
   onNavigate,
+  connected,
 }: {
   collapsed: boolean
   toggleSidebar: () => void
   onNavigate?: () => void
+  connected: boolean
 }) {
   const theme = useUiStore((s) => s.theme)
   const setTheme = useUiStore((s) => s.setTheme)
@@ -102,6 +105,29 @@ function SidebarNav({
           collapsed && "items-center"
         )}
       >
+        <div
+          className={cn(
+            "flex items-center gap-2 px-2 text-xs text-sidebar-foreground/80",
+            collapsed && "justify-center px-0"
+          )}
+        >
+          <span
+            className={cn(
+              "inline-block size-2 shrink-0 rounded-full",
+              connected ? "bg-emerald-500" : "bg-muted-foreground/50"
+            )}
+            aria-hidden
+          />
+          {collapsed ? (
+            <span className="sr-only">
+              {connected ? "Live connection" : "Connecting"}
+            </span>
+          ) : connected ? (
+            <span>Live</span>
+          ) : (
+            <span>Connecting…</span>
+          )}
+        </div>
         <Button
           type="button"
           variant="ghost"
@@ -131,6 +157,7 @@ function SidebarNav({
 }
 
 export function Sidebar() {
+  const { connected } = useBenchSocket()
   const isMobile = useIsMobile()
   const sidebarOpen = useUiStore((s) => s.sidebarOpen)
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
@@ -153,6 +180,7 @@ export function Sidebar() {
             collapsed={false}
             toggleSidebar={toggleSidebar}
             onNavigate={closeMobileIfNeeded}
+            connected={connected}
           />
         </SheetContent>
       </Sheet>
@@ -167,7 +195,11 @@ export function Sidebar() {
       )}
     >
       <div className="flex min-h-0 flex-1 flex-col">
-        <SidebarNav collapsed={!sidebarOpen} toggleSidebar={toggleSidebar} />
+        <SidebarNav
+          collapsed={!sidebarOpen}
+          toggleSidebar={toggleSidebar}
+          connected={connected}
+        />
       </div>
     </aside>
   )

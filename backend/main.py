@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from database import create_db_and_tables
 from routes import benches, operations, settings, sites, templates
-from ws.manager import ConnectionManager
+from ws.manager import connection_manager
 
 
 @asynccontextmanager
@@ -18,7 +18,9 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-app.state.ws_manager = ConnectionManager()
+app.state.ws_manager = connection_manager
+
+app.add_api_websocket_route("/ws/benches", benches.websocket_bench_status)
 
 app.add_middleware(
     CORSMiddleware,

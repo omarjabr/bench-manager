@@ -41,6 +41,8 @@ export type BenchSummary = {
   status: BenchStatus
   site_count: number
   app_count: number
+  /** Present when merged from live WebSocket updates or detail fetch. */
+  pid?: number | null
 }
 
 export type BenchDetail = {

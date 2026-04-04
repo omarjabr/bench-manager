@@ -2,10 +2,22 @@ import type { BenchStatus } from "@/lib/api"
 
 const BENCH_WS_URL = "ws://localhost:8000/ws/benches"
 
-export type BenchStatusEvent = {
-  bench_name: string
+const MAX_RECONNECT_ATTEMPTS = 10
+
+export type BenchStatusRow = {
+  name: string
   status: BenchStatus
-  pid?: number | null
+  pid: number | null
+}
+
+export type BenchStatusEvent = {
+  benches: BenchStatusRow[]
+}
+
+export type CreateBenchSocketOptions = {
+  onMessage: (data: BenchStatusEvent) => void
+  onError?: () => void
+  onConnectionChange?: (connected: boolean) => void
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -17,26 +29,52 @@ function isBenchStatus(value: unknown): value is BenchStatus {
 }
 
 function parseBenchStatusEvent(raw: unknown): BenchStatusEvent | null {
-  if (!isRecord(raw)) return null
-  const name = raw.bench_name
-  const status = raw.status
-  if (typeof name !== "string" || !isBenchStatus(status)) return null
-  const out: BenchStatusEvent = { bench_name: name, status }
-  const pid = raw.pid
-  if (pid === null || typeof pid === "number") {
-    out.pid = pid
+  if (!isRecord(raw)) {
+    return null
   }
-  return out
+  const benches = raw.benches
+  if (!Array.isArray(benches)) {
+    return null
+  }
+  const rows: BenchStatusRow[] = []
+  for (const item of benches) {
+    if (!isRecord(item)) {
+      return null
+    }
+    const name = item.name
+    const status = item.status
+    if (typeof name !== "string" || !isBenchStatus(status)) {
+      return null
+    }
+    const pid = item.pid
+    if (pid !== null && typeof pid !== "number") {
+      return null
+    }
+    rows.push({ name, status, pid: pid === undefined ? null : pid })
+  }
+  return { benches: rows }
+}
+
+function safeCloseWebSocket(socket: WebSocket | null): void {
+  if (socket === null) {
+    return
+  }
+  if (
+    socket.readyState === WebSocket.CLOSED ||
+    socket.readyState === WebSocket.CLOSING
+  ) {
+    return
+  }
+  socket.close()
 }
 
 /**
- * Opens a WebSocket to the bench status broadcast endpoint, invokes `onMessage`
- * for each valid JSON payload, and reconnects with exponential backoff (cap 30s).
+ * Opens a WebSocket to the bench status broadcast endpoint, invokes ``onMessage``
+ * for each valid JSON payload, reconnects with exponential backoff (cap 30s),
+ * and stops after ``MAX_RECONNECT_ATTEMPTS`` failed connection cycles.
  */
-export function createBenchSocket(
-  onMessage: (data: BenchStatusEvent) => void,
-  onError?: () => void
-): () => void {
+export function createBenchSocket(options: CreateBenchSocketOptions): () => void {
+  const { onMessage, onError, onConnectionChange } = options
   let ws: WebSocket | null = null
   let closed = false
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -50,7 +88,13 @@ export function createBenchSocket(
   }
 
   const scheduleReconnect = () => {
-    if (closed) return
+    if (closed) {
+      return
+    }
+    if (attempt >= MAX_RECONNECT_ATTEMPTS) {
+      onError?.()
+      return
+    }
     const baseMs = 1000
     const maxMs = 30000
     const delayMs = Math.min(maxMs, baseMs * 2 ** attempt)
@@ -60,32 +104,54 @@ export function createBenchSocket(
   }
 
   const connect = () => {
-    if (closed) return
+    if (closed) {
+      return
+    }
     clearTimer()
-    ws = new WebSocket(BENCH_WS_URL)
+    const socket = new WebSocket(BENCH_WS_URL)
+    ws = socket
 
-    ws.onopen = () => {
+    socket.onopen = () => {
+      if (closed) {
+        safeCloseWebSocket(socket)
+        return
+      }
       attempt = 0
+      onConnectionChange?.(true)
     }
 
-    ws.onmessage = (event: MessageEvent<string | ArrayBuffer | Blob>) => {
-      if (typeof event.data !== "string") return
+    socket.onmessage = (event: MessageEvent<string | ArrayBuffer | Blob>) => {
+      if (typeof event.data !== "string") {
+        return
+      }
       try {
         const parsed: unknown = JSON.parse(event.data)
         const payload = parseBenchStatusEvent(parsed)
-        if (payload !== null) onMessage(payload)
+        if (payload !== null) {
+          onMessage(payload)
+        }
       } catch {
-        onError?.()
+        /* ignore malformed frames */
       }
     }
 
-    ws.onerror = () => {
-      onError?.()
+    socket.onerror = () => {
+      /* connection failure details arrive via onclose */
     }
 
-    ws.onclose = () => {
-      ws = null
-      if (!closed) scheduleReconnect()
+    socket.onclose = () => {
+      if (ws === socket) {
+        ws = null
+      }
+      if (closed) {
+        return
+      }
+      onConnectionChange?.(false)
+      scheduleReconnect()
+    }
+
+    if (closed) {
+      safeCloseWebSocket(socket)
     }
   }
 
@@ -94,9 +160,9 @@ export function createBenchSocket(
   return () => {
     closed = true
     clearTimer()
-    if (ws !== null) {
-      ws.close()
-      ws = null
-    }
+    onConnectionChange?.(false)
+    const socket = ws
+    ws = null
+    safeCloseWebSocket(socket)
   }
 }
