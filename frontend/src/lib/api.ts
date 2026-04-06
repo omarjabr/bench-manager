@@ -110,3 +110,95 @@ export async function updateSettings(
   const res = await api.put<Settings>("/api/settings", body)
   return res.data
 }
+
+export type InitAppItem = {
+  name: string
+  repo_url: string
+  branch?: string
+}
+
+export type InitOperationBody = {
+  bench_name: string
+  parent_dir: string
+  frappe_version: "version-15" | "version-14" | "develop"
+  site_name: string
+  admin_password: string
+  db_root_password: string
+  apps: InitAppItem[]
+  /** Passed to ``bench init --python``; default matches backend. */
+  python_version: string
+}
+
+export type OperationIdResponse = {
+  operation_id: string
+}
+
+export async function postOperationInit(
+  body: InitOperationBody
+): Promise<OperationIdResponse> {
+  const res = await api.post<OperationIdResponse>("/api/operations/init", body)
+  return res.data
+}
+
+export type GetAppOperationBody = {
+  bench_name: string
+  repo_url: string
+  branch?: string
+}
+
+export async function postOperationGetApp(
+  body: GetAppOperationBody
+): Promise<OperationIdResponse> {
+  const res = await api.post<OperationIdResponse>(
+    "/api/operations/get-app",
+    body
+  )
+  return res.data
+}
+
+export type NewSiteOperationBody = {
+  bench_name: string
+  site_name: string
+  admin_password: string
+  db_root_password: string
+  apps: string[]
+}
+
+export async function postOperationNewSite(
+  body: NewSiteOperationBody
+): Promise<OperationIdResponse> {
+  const res = await api.post<OperationIdResponse>(
+    "/api/operations/new-site",
+    body
+  )
+  return res.data
+}
+
+export type InstallAppOnSiteBody = {
+  bench_name: string
+  site_name: string
+  apps: string[]
+}
+
+export async function postOperationInstallAppOnSite(
+  body: InstallAppOnSiteBody
+): Promise<OperationIdResponse> {
+  const res = await api.post<OperationIdResponse>(
+    "/api/operations/install-app",
+    body
+  )
+  return res.data
+}
+
+/**
+ * WebSocket URL for streaming operation logs (matches the axios ``baseURL`` host).
+ */
+export function getOperationsWebSocketUrl(operationId: string): string {
+  const base =
+    typeof api.defaults.baseURL === "string"
+      ? api.defaults.baseURL
+      : "http://localhost:8000"
+  const parsed = new URL(base)
+  const wsScheme = parsed.protocol === "https:" ? "wss:" : "ws:"
+  return `${wsScheme}//${parsed.host}/ws/operations/${encodeURIComponent(operationId)}`
+}

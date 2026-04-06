@@ -1,13 +1,19 @@
 """FastAPI application entry point."""
 
-from contextlib import asynccontextmanager
-
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-
-from database import create_db_and_tables
-from routes import benches, operations, settings, sites, templates
 from ws.manager import connection_manager
+from routes import benches, operations, settings, sites, templates
+from database import create_db_and_tables
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI
+from contextlib import asynccontextmanager
+import logging
+
+logger = logging.getLogger(__name__)
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 
 
 @asynccontextmanager
@@ -21,6 +27,10 @@ app = FastAPI(lifespan=lifespan)
 app.state.ws_manager = connection_manager
 
 app.add_api_websocket_route("/ws/benches", benches.websocket_bench_status)
+app.add_api_websocket_route(
+    "/ws/operations/{operation_id}",
+    operations.websocket_operation_logs,
+)
 
 app.add_middleware(
     CORSMiddleware,

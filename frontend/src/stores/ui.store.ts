@@ -9,8 +9,11 @@ type UiState = {
   toggleSidebar: () => void
   theme: Theme
   setTheme: (theme: Theme) => void
+  /** Bench name for an in-flight operation (e.g. init) — paired with ``activeOperationId``. */
   activeBenchName: string | null
   setActiveBench: (name: string | null) => void
+  activeOperationId: string | null
+  setActiveOperationId: (id: string | null) => void
 }
 
 function readStoredTheme(): Theme {
@@ -40,6 +43,7 @@ export const useUiStore = create<UiState>((set) => ({
   sidebarOpen: getInitialSidebarOpen(),
   theme: initialTheme,
   activeBenchName: null,
+  activeOperationId: null,
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setTheme: (theme) => {
     applyThemeToDocument(theme)
@@ -51,4 +55,5 @@ export const useUiStore = create<UiState>((set) => ({
     set({ theme })
   },
   setActiveBench: (name) => set({ activeBenchName: name }),
+  setActiveOperationId: (id) => set({ activeOperationId: id }),
 }))

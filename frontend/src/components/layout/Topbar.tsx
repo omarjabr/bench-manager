@@ -20,9 +20,14 @@ function usePageTitle(): string {
 type TopbarProps = {
   searchQuery: string
   onSearchChange: (value: string) => void
+  onNewBench: () => void
 }
 
-export function Topbar({ searchQuery, onSearchChange }: TopbarProps) {
+export function Topbar({
+  searchQuery,
+  onSearchChange,
+  onNewBench,
+}: TopbarProps) {
   const title = usePageTitle()
   const isMobile = useIsMobile()
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
@@ -55,7 +60,12 @@ export function Topbar({ searchQuery, onSearchChange }: TopbarProps) {
         />
       </div>
       <div className="ml-auto flex min-w-0 shrink-0 items-center gap-2">
-        <Button type="button" size="sm" className="gap-1.5">
+        <Button
+          type="button"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => onNewBench()}
+        >
           <HugeiconsIcon icon={Add01Icon} className="size-4" />
           <span className="hidden sm:inline">New Bench</span>
         </Button>

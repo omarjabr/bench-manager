@@ -5,8 +5,10 @@ import { BrowserRouter, Outlet, Route, Routes } from "react-router-dom"
 import { Sidebar } from "@/components/layout/Sidebar"
 import { Topbar } from "@/components/layout/Topbar"
 import { Toaster } from "@/components/ui/sonner"
+import { NewBenchWizard } from "@/components/wizards/NewBenchWizard"
 import BenchDetail from "@/pages/BenchDetail"
 import Dashboard from "@/pages/Dashboard"
+import Database from "@/pages/Database"
 import Settings from "@/pages/Settings"
 import Templates from "@/pages/Templates"
 import { useUiStore } from "@/stores/ui.store"
@@ -23,6 +25,7 @@ function ThemeSync() {
 
 function AppShell() {
   const [searchQuery, setSearchQuery] = useState("")
+  const [newBenchOpen, setNewBenchOpen] = useState(false)
 
   return (
     <div className="flex h-screen min-h-0 w-full overflow-hidden">
@@ -31,11 +34,13 @@ function AppShell() {
         <Topbar
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
+          onNewBench={() => setNewBenchOpen(true)}
         />
         <div className="min-h-0 flex-1 overflow-y-auto p-6">
           <Outlet context={{ searchQuery, setSearchQuery }} />
         </div>
       </div>
+      <NewBenchWizard open={newBenchOpen} onOpenChange={setNewBenchOpen} />
     </div>
   )
 }
@@ -51,6 +56,7 @@ export function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/benches/:name" element={<BenchDetail />} />
             <Route path="/templates" element={<Templates />} />
+            <Route path="/database" element={<Database />} />
             <Route path="/settings" element={<Settings />} />
           </Route>
         </Routes>

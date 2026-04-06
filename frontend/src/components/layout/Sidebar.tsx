@@ -1,4 +1,5 @@
 import {
+  DatabaseIcon,
   Home01Icon,
   Layout01Icon,
   Moon01Icon,
@@ -11,8 +12,8 @@ import { NavLink } from "react-router-dom"
 
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent } from "@/components/ui/sheet"
-import { useBenchSocket } from "@/hooks/useBenchSocket"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useBenchSocket } from "@/hooks/useBenchSocket"
 import { cn } from "@/lib/utils"
 import { useUiStore } from "@/stores/ui.store"
 
@@ -52,7 +53,7 @@ function SidebarNav({
       <div
         className={cn(
           "flex items-center justify-between border-b border-sidebar-border px-4 py-4",
-          collapsed && "px-2"
+          collapsed && "justify-center px-2"
         )}
       >
         {!collapsed && (
@@ -65,7 +66,7 @@ function SidebarNav({
           type="button"
           variant="ghost"
           size="icon"
-          className="text-sidebar-foreground"
+          className="hidden text-sidebar-foreground md:inline-flex"
           onClick={() => toggleSidebar()}
           aria-label={collapsed ? "Collapse sidebar" : "Expand sidebar"}
         >
@@ -89,6 +90,14 @@ function SidebarNav({
         >
           <HugeiconsIcon icon={Layout01Icon} className="size-4 shrink-0" />
           {!collapsed && <span>Templates</span>}
+        </NavLink>
+        <NavLink
+          to="/database"
+          onClick={onNavigate}
+          className={({ isActive }) => navLinkClass({ isActive, collapsed })}
+        >
+          <HugeiconsIcon icon={DatabaseIcon} className="size-4 shrink-0" />
+          {!collapsed && <span>Database</span>}
         </NavLink>
         <NavLink
           to="/settings"

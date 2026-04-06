@@ -1,10 +1,12 @@
 import {
+  Add01Icon,
   ArrowDown01Icon,
   ArrowUp01Icon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 
+import { InstallAppOnSiteDialog } from "@/components/bench/InstallAppOnSiteDialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -12,13 +14,15 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
-import type { SiteInfo } from "@/lib/api"
+import type { AppInfo, SiteInfo } from "@/lib/api"
 
 type SiteListProps = {
   sites: SiteInfo[]
+  benchApps: AppInfo[]
+  benchName: string
 }
 
-export function SiteList({ sites }: SiteListProps) {
+export function SiteList({ sites, benchApps, benchName }: SiteListProps) {
   if (sites.length === 0) {
     return (
       <p className="text-muted-foreground text-sm">No sites found</p>
@@ -28,14 +32,40 @@ export function SiteList({ sites }: SiteListProps) {
   return (
     <ul className="flex flex-col gap-2">
       {sites.map((site) => (
-        <SiteRow key={site.name} site={site} />
+        <SiteRow
+          key={site.name}
+          site={site}
+          benchApps={benchApps}
+          benchName={benchName}
+        />
       ))}
     </ul>
   )
 }
 
-function SiteRow({ site }: { site: SiteInfo }) {
+function availableAppNames(site: SiteInfo, benchApps: AppInfo[]): string[] {
+  const installed = new Set(site.installed_apps.map((a) => a.name))
+  return benchApps
+    .map((a) => a.name)
+    .filter((name) => !installed.has(name))
+}
+
+function SiteRow({
+  site,
+  benchApps,
+  benchName,
+}: {
+  site: SiteInfo
+  benchApps: AppInfo[]
+  benchName: string
+}) {
   const [open, setOpen] = useState(false)
+  const [installOpen, setInstallOpen] = useState(false)
+
+  const toInstall = useMemo(
+    () => availableAppNames(site, benchApps),
+    [site, benchApps]
+  )
 
   return (
     <li className="rounded-lg border border-border bg-card">
@@ -59,6 +89,17 @@ function SiteRow({ site }: { site: SiteInfo }) {
             </Button>
           </CollapsibleTrigger>
           <span className="min-w-0 flex-1 font-medium">{site.name}</span>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="shrink-0 gap-1"
+            disabled={toInstall.length === 0}
+            onClick={() => setInstallOpen(true)}
+          >
+            <HugeiconsIcon icon={Add01Icon} className="size-4" />
+            Install App
+          </Button>
         </div>
         <CollapsibleContent>
           <div className="border-t border-border px-3 py-2 pl-11">
@@ -82,6 +123,14 @@ function SiteRow({ site }: { site: SiteInfo }) {
           </div>
         </CollapsibleContent>
       </Collapsible>
+
+      <InstallAppOnSiteDialog
+        open={installOpen}
+        onOpenChange={setInstallOpen}
+        siteName={site.name}
+        benchName={benchName}
+        availableAppNames={toInstall}
+      />
     </li>
   )
 }

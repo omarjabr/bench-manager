@@ -40,4 +40,9 @@ describe("ui.store", () => {
     useUiStore.getState().setActiveBench("dev-bench")
     expect(useUiStore.getState().activeBenchName).toBe("dev-bench")
   })
+
+  it("setActiveOperationId updates the operation id", () => {
+    useUiStore.getState().setActiveOperationId("abc123")
+    expect(useUiStore.getState().activeOperationId).toBe("abc123")
+  })
 })

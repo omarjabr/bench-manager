@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -21,6 +22,10 @@ def _write_valid_bench(bench_dir: Path) -> None:
         encoding="utf-8",
     )
     (bench_dir / "sites" / "apps.txt").write_text("frappe\nerpnext\n", encoding="utf-8")
+    (bench_dir / "sites" / "mysite" / "apps.txt").write_text(
+        "frappe\nerpnext\n",
+        encoding="utf-8",
+    )
     (bench_dir / "apps" / "erpnext" / "erpnext").mkdir(parents=True)
     (bench_dir / "apps" / "erpnext" / "erpnext" / "__init__.py").write_text(
         '__version__ = "15.0.1"\n',
@@ -105,16 +110,11 @@ def test_get_bench_detail_reads_sites_apps_and_procfile(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Detail view uses ``bench list-apps`` for per-site apps, Procfile, and status."""
+    """Detail view uses ``sites/<site>/apps.txt`` for per-site apps, Procfile, and status."""
     bench = tmp_path / "detail-bench"
     _write_valid_bench(bench)
 
     monkeypatch.setattr(discovery.process, "get_bench_status", lambda _p: ("running", 1234))
-    monkeypatch.setattr(
-        discovery,
-        "_list_installed_app_names_via_bench",
-        lambda _b, _s: ["frappe", "erpnext"],
-    )
 
     detail = discovery.get_bench_detail(bench)
     assert detail.name == "detail-bench"
@@ -164,17 +164,41 @@ def test_count_bench_app_entries_prefers_sites_apps_txt_and_fallbacks(tmp_path: 
     assert discovery._count_bench_app_entries(b3) == 2
 
 
-def test_parse_bench_list_apps_stdout_strips_lines() -> None:
-    """``_parse_bench_list_apps_stdout`` collects one app name per non-empty line."""
-    raw = "  frappe  \n\nerpnext\n"
-    assert discovery._parse_bench_list_apps_stdout(raw) == ["frappe", "erpnext"]
+def test_parse_site_apps_txt_strips_lines_and_skips_comments() -> None:
+    """``_parse_site_apps_txt`` uses the first token per line; skips comments and blanks."""
+    raw = "  frappe  \n\nerpnext\n# ignored\n"
+    assert discovery._parse_site_apps_txt(raw) == ["frappe", "erpnext"]
 
 
-def test_site_installed_apps_follows_bench_list_apps_not_filesystem(
+def test_parse_site_apps_txt_first_token_strips_inline_version() -> None:
+    """Inline version or branch text after the app name is ignored."""
+    raw = "frappe 15.103.3 version-15\nerpnext 15.103.1 version-15\n"
+    assert discovery._parse_site_apps_txt(raw) == ["frappe", "erpnext"]
+
+
+def test_read_lines_from_site_apps_txt_logs_raw_lines_at_debug(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Debug log includes split raw lines from ``apps.txt`` before parsing."""
+    bench = tmp_path / "log-bench"
+    (bench / "sites" / "s1").mkdir(parents=True)
+    (bench / "sites" / "s1" / "apps.txt").write_text(
+        "frappe\nerpnext\n",
+        encoding="utf-8",
+    )
+    caplog.set_level(logging.DEBUG)
+    names = discovery._read_lines_from_site_apps_txt(bench, "s1")
+    assert names == ["frappe", "erpnext"]
+    assert "raw lines before parse" in caplog.text
+    assert "frappe" in caplog.text and "erpnext" in caplog.text
+
+
+def test_get_bench_detail_site_apps_txt_lists_all_named_apps(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Installed app names come from ``bench list-apps``, not ``apps.txt`` on disk."""
+    """Installed app names come from ``sites/<site>/apps.txt`` in order."""
     bench = tmp_path / "cfg-bench"
     _write_valid_bench(bench)
     (bench / "sites" / "mysite" / "apps.txt").write_text(
@@ -183,22 +207,42 @@ def test_site_installed_apps_follows_bench_list_apps_not_filesystem(
     )
 
     monkeypatch.setattr(discovery.process, "get_bench_status", lambda _p: ("stopped", None))
-    monkeypatch.setattr(
-        discovery,
-        "_list_installed_app_names_via_bench",
-        lambda _b, _s: ["frappe"],
-    )
 
     detail = discovery.get_bench_detail(bench)
     mysite = next(s for s in detail.sites if s.name == "mysite")
-    assert [a.name for a in mysite.installed_apps] == ["frappe"]
+    assert [a.name for a in mysite.installed_apps] == ["frappe", "erpnext", "phantom"]
+    phantom = next(a for a in mysite.installed_apps if a.name == "phantom")
+    assert phantom.version == "unknown"
 
 
-def test_get_bench_detail_empty_when_bench_list_apps_returns_nothing(
+def test_get_bench_detail_site_apps_txt_bare_names_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """If ``bench list-apps`` yields no apps, the site has an empty list (no exception)."""
+    """Per-site ``apps.txt`` yields AppInfo names that are bare app tokens only."""
+    bench = tmp_path / "bare-names-bench"
+    _write_valid_bench(bench)
+    (bench / "sites" / "mysite" / "apps.txt").write_text("frappe\nerpnext\n", encoding="utf-8")
+
+    monkeypatch.setattr(discovery.process, "get_bench_status", lambda _p: ("stopped", None))
+
+    detail = discovery.get_bench_detail(bench)
+    mysite = next(s for s in detail.sites if s.name == "mysite")
+    by_name = {a.name: a.version for a in mysite.installed_apps}
+    assert set(by_name) == {"frappe", "erpnext"}
+    for name in by_name:
+        assert name == name.strip()
+        assert " " not in name
+        assert "\t" not in name
+    assert by_name["frappe"] == "15.1.0"
+    assert by_name["erpnext"] == "15.0.1"
+
+
+def test_get_bench_detail_frappe_only_when_site_apps_empty_and_list_apps_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When list-apps yields nothing, ``frappe`` is still added if present under ``apps/``."""
     bench = tmp_path / "no-site-apps"
     (bench / "apps" / "frappe" / "frappe").mkdir(parents=True)
     (bench / "sites" / "emptysite").mkdir(parents=True)
@@ -209,17 +253,151 @@ def test_get_bench_detail_empty_when_bench_list_apps_returns_nothing(
         encoding="utf-8",
     )
     (bench / "sites" / "apps.txt").write_text("frappe\n", encoding="utf-8")
+    (bench / "sites" / "emptysite" / "apps.txt").write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(discovery.process, "get_bench_status", lambda _p: ("stopped", None))
+    monkeypatch.setattr(discovery, "_list_apps_from_bench_cli", lambda _b, _s: [])
+
+    detail = discovery.get_bench_detail(bench)
+    site = next(s for s in detail.sites if s.name == "emptysite")
+    assert len(site.installed_apps) == 1
+    assert site.installed_apps[0].name == "frappe"
+    assert site.installed_apps[0].version == "15.1.0"
+
+
+def test_get_bench_detail_fallback_list_apps_when_site_apps_txt_empty(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When per-site ``apps.txt`` is empty, list-apps supplies installed app names."""
+    bench = tmp_path / "fallback-bench"
+    (bench / "apps" / "frappe" / "frappe").mkdir(parents=True)
+    (bench / "apps" / "erpnext" / "erpnext").mkdir(parents=True)
+    (bench / "sites" / "s1").mkdir(parents=True)
+    (bench / "env").mkdir(parents=True)
+    (bench / "Procfile").write_text("web: bench serve --port 8000\n", encoding="utf-8")
+    (bench / "apps" / "frappe" / "frappe" / "__init__.py").write_text(
+        '__version__ = "15.1.0"\n',
+        encoding="utf-8",
+    )
+    (bench / "apps" / "erpnext" / "erpnext" / "__init__.py").write_text(
+        '__version__ = "15.0.1"\n',
+        encoding="utf-8",
+    )
+    (bench / "sites" / "s1" / "apps.txt").write_text("", encoding="utf-8")
 
     monkeypatch.setattr(discovery.process, "get_bench_status", lambda _p: ("stopped", None))
     monkeypatch.setattr(
         discovery,
-        "_list_installed_app_names_via_bench",
-        lambda _b, _s: [],
+        "_list_apps_from_bench_cli",
+        lambda _b, _s: ["frappe", "erpnext"],
     )
 
     detail = discovery.get_bench_detail(bench)
-    site = next(s for s in detail.sites if s.name == "emptysite")
-    assert site.installed_apps == []
+    site = next(s for s in detail.sites if s.name == "s1")
+    assert [a.name for a in site.installed_apps] == ["frappe", "erpnext"]
+    assert {(a.name, a.version) for a in site.installed_apps} == {
+        ("frappe", "15.1.0"),
+        ("erpnext", "15.0.1"),
+    }
+
+
+def test_get_bench_detail_merges_per_site_and_bench_level_apps_txt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Per-site ``apps.txt`` is merged with ``sites/apps.txt`` (ordered, deduped)."""
+    bench = tmp_path / "merge-bench"
+    (bench / "apps" / "frappe" / "frappe").mkdir(parents=True)
+    (bench / "apps" / "erpnext" / "erpnext").mkdir(parents=True)
+    (bench / "sites" / "s1").mkdir(parents=True)
+    (bench / "env").mkdir(parents=True)
+    (bench / "Procfile").write_text("web: bench serve --port 8000\n", encoding="utf-8")
+    (bench / "apps" / "frappe" / "frappe" / "__init__.py").write_text(
+        '__version__ = "15.1.0"\n',
+        encoding="utf-8",
+    )
+    (bench / "apps" / "erpnext" / "erpnext" / "__init__.py").write_text(
+        '__version__ = "15.0.1"\n',
+        encoding="utf-8",
+    )
+    (bench / "sites" / "s1" / "apps.txt").write_text("frappe\n", encoding="utf-8")
+    (bench / "sites" / "apps.txt").write_text("frappe\nerpnext\n", encoding="utf-8")
+
+    monkeypatch.setattr(discovery.process, "get_bench_status", lambda _p: ("stopped", None))
+
+    detail = discovery.get_bench_detail(bench)
+    site = next(s for s in detail.sites if s.name == "s1")
+    assert [a.name for a in site.installed_apps] == ["frappe", "erpnext"]
+
+
+def test_list_apps_from_bench_cli_extracts_first_token_per_line(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``bench list-apps`` lines with metadata yield only the app name token."""
+    bench = tmp_path / "cli-bench"
+    bench.mkdir()
+
+    def fake_run(
+        *_args: object,
+        **_kwargs: object,
+    ) -> object:
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = "frappe 15.103.3 version-15\nerpnext 15.103.1 version-15\n"
+        result.stderr = ""
+        return result
+
+    monkeypatch.setattr(discovery.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        discovery.process,
+        "resolve_bench_executable",
+        lambda: tmp_path / "bench",
+    )
+
+    names = discovery._list_apps_from_bench_cli(bench, "demo.site")
+    assert names == ["frappe", "erpnext"]
+
+
+def test_get_bench_detail_installed_apps_unique_names_with_cli_style_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Merged / CLI paths yield each app name once; versions come from ``apps/*/`` on disk."""
+    bench = tmp_path / "uniq-bench"
+    (bench / "apps" / "frappe" / "frappe").mkdir(parents=True)
+    (bench / "apps" / "erpnext" / "erpnext").mkdir(parents=True)
+    (bench / "sites" / "s1").mkdir(parents=True)
+    (bench / "env").mkdir(parents=True)
+    (bench / "Procfile").write_text("web: bench serve --port 8000\n", encoding="utf-8")
+    (bench / "apps" / "frappe" / "frappe" / "__init__.py").write_text(
+        '__version__ = "15.103.3"\n',
+        encoding="utf-8",
+    )
+    (bench / "apps" / "erpnext" / "erpnext" / "__init__.py").write_text(
+        '__version__ = "15.103.1"\n',
+        encoding="utf-8",
+    )
+    (bench / "sites" / "s1" / "apps.txt").write_text(
+        "frappe 15.103.3 version-15\nfrappe\nerpnext 15.103.1 version-15\n",
+        encoding="utf-8",
+    )
+    (bench / "sites" / "apps.txt").write_text(
+        "frappe 15.103.3 version-15\nerpnext\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(discovery.process, "get_bench_status", lambda _p: ("stopped", None))
+
+    detail = discovery.get_bench_detail(bench)
+    site = next(s for s in detail.sites if s.name == "s1")
+    names = [a.name for a in site.installed_apps]
+    assert names == ["frappe", "erpnext"]
+    assert len(names) == len(set(names))
+    by_name = {a.name: a.version for a in site.installed_apps}
+    assert by_name["frappe"] == "15.103.3"
+    assert by_name["erpnext"] == "15.103.1"
 
 
 def test_scan_for_benches_logs_and_skips_on_permission_error(

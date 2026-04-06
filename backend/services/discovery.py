@@ -1,10 +1,11 @@
 """Filesystem discovery for Frappe bench installations."""
 
-import asyncio
 import fnmatch
 import json
 import logging
 import re
+import subprocess
+from collections import OrderedDict
 from pathlib import Path
 
 from config import get_settings
@@ -166,6 +167,165 @@ def _list_site_names(bench_dir: Path) -> list[str]:
     return sorted(names)
 
 
+def _first_app_name_token(line: str) -> str | None:
+    """
+    Return the first whitespace-delimited token from a line, or ``None`` if the line is empty,
+    a comment, or has no tokens.
+
+    Some ``apps.txt`` and ``bench list-apps`` lines include version or branch metadata after
+    the app name; only the first token is the app name.
+    """
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return None
+    parts = stripped.split()
+    if not parts:
+        return None
+    return parts[0]
+
+
+def _parse_site_apps_txt(text: str) -> list[str]:
+    """
+    Parse ``sites/<site>/apps.txt``-style lines: one app name per line (first token only;
+    comments and blanks ignored).
+    """
+    names: list[str] = []
+    for line in text.splitlines():
+        token = _first_app_name_token(line)
+        if token is None:
+            continue
+        names.append(token)
+    return names
+
+
+def _read_lines_from_site_apps_txt(bench_dir: Path, site_name: str) -> list[str]:
+    """Read app names from ``sites/<site_name>/apps.txt`` (missing file → ``[]``)."""
+    path = bench_dir / "sites" / site_name / "apps.txt"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        logger.debug("No apps.txt for site %s at %s", site_name, _safe_resolve(path))
+        return []
+    except (PermissionError, OSError) as exc:
+        logger.warning("Could not read site apps.txt %s: %s", path, exc)
+        return []
+    raw_lines = text.splitlines()
+    logger.debug(
+        "Site %s apps.txt raw lines before parse: %r",
+        site_name,
+        raw_lines,
+    )
+    return _parse_site_apps_txt(text)
+
+
+def _read_lines_from_bench_sites_apps_txt(bench_dir: Path) -> list[str]:
+    """Read app names from bench-level ``sites/apps.txt`` (available apps on the bench)."""
+    path = bench_dir / "sites" / "apps.txt"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        logger.debug("Bench-level sites/apps.txt not found at %s", _safe_resolve(path))
+        return []
+    except (PermissionError, OSError) as exc:
+        logger.warning("Could not read sites/apps.txt %s: %s", path, exc)
+        return []
+    return _parse_site_apps_txt(text)
+
+
+def _merge_ordered_unique_app_names(first: list[str], second: list[str]) -> list[str]:
+    """Preserve order: all of ``first``, then names from ``second`` not already seen."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for name in first + second:
+        if name in seen:
+            continue
+        seen.add(name)
+        out.append(name)
+    return out
+
+
+def _dedupe_app_names_ordered(names: list[str]) -> list[str]:
+    """Return ``names`` with duplicates removed; first occurrence of each app name wins."""
+    ordered = OrderedDict.fromkeys(names)
+    return list(ordered.keys())
+
+
+def _list_apps_from_bench_cli(bench_dir: Path, site_name: str) -> list[str]:
+    """
+    Run ``bench --site <site> list-apps`` and parse stdout (one app name per line).
+
+    Used when per-site ``apps.txt`` is missing or empty. Returns ``[]`` on failure.
+    """
+    try:
+        bench_exe = process.resolve_bench_executable()
+    except RuntimeError as exc:
+        logger.warning("Could not resolve bench for list-apps: %s", exc)
+        return []
+    try:
+        resolved = bench_dir.resolve()
+    except (OSError, RuntimeError):
+        resolved = bench_dir
+    try:
+        result = subprocess.run(
+            [str(bench_exe), "--site", site_name, "list-apps"],
+            cwd=str(resolved),
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("list-apps subprocess failed for site %s: %s", site_name, exc)
+        return []
+    if result.returncode != 0:
+        logger.warning(
+            "list-apps exited %s for site %s: %s",
+            result.returncode,
+            site_name,
+            (result.stderr or "")[:500],
+        )
+        return []
+    names: list[str] = []
+    for line in (result.stdout or "").splitlines():
+        token = _first_app_name_token(line)
+        if token is None:
+            continue
+        names.append(token)
+    return _dedupe_app_names_ordered(names)
+
+
+def _ensure_frappe_app_name(bench_dir: Path, names: list[str]) -> list[str]:
+    """Prepend ``frappe`` if the bench has the Frappe app but the name list omits it."""
+    if "frappe" in names:
+        return names
+    try:
+        resolved = bench_dir.resolve()
+    except (OSError, RuntimeError):
+        resolved = bench_dir
+    if (resolved / "apps" / "frappe").is_dir():
+        return ["frappe", *names]
+    return names
+
+
+def _installed_app_name_list(bench_dir: Path, site_name: str) -> list[str]:
+    """
+    Resolve installed app names for a site: per-site ``apps.txt``, merged with
+    ``sites/apps.txt``; if per-site file is missing or yields no names, use
+    ``bench list-apps`` output.
+
+    Names are always single tokens (no inline version text). After merging all sources,
+    duplicates are removed so each app name appears once.
+    """
+    per_site = _read_lines_from_site_apps_txt(bench_dir, site_name)
+    bench_level = _read_lines_from_bench_sites_apps_txt(bench_dir)
+    if len(per_site) == 0:
+        names = _list_apps_from_bench_cli(bench_dir, site_name)
+    else:
+        names = _merge_ordered_unique_app_names(per_site, bench_level)
+    names = _ensure_frappe_app_name(bench_dir, names)
+    return _dedupe_app_names_ordered(names)
+
+
 def _read_app_version(bench_dir: Path, app_name: str) -> str:
     """Read ``__version__`` from ``apps/<name>/<name>/__init__.py``."""
     try:
@@ -190,79 +350,6 @@ def _read_app_version(bench_dir: Path, app_name: str) -> str:
         return "unknown"
 
 
-def _parse_bench_list_apps_stdout(stdout: str) -> list[str]:
-    """Turn ``bench list-apps`` stdout into a list of app names (one non-empty line per app)."""
-    names: list[str] = []
-    for line in stdout.splitlines():
-        name = line.strip()
-        if name:
-            names.append(name)
-    return names
-
-
-async def _bench_list_app_names_async(bench_dir: Path, site_name: str) -> list[str]:
-    """Run ``bench --site <site> list-apps`` in ``bench_dir`` and return app names from stdout."""
-    try:
-        resolved_bench = bench_dir.resolve()
-    except (OSError, RuntimeError):
-        resolved_bench = bench_dir
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "bench",
-            "--site",
-            site_name,
-            "list-apps",
-            cwd=str(resolved_bench),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-    except (FileNotFoundError, PermissionError, OSError) as exc:
-        logger.warning(
-            "Could not start bench list-apps for site %s in %s: %s",
-            site_name,
-            resolved_bench,
-            exc,
-        )
-        return []
-    try:
-        stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=120.0)
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
-        logger.warning(
-            "bench list-apps timed out for site %s in %s",
-            site_name,
-            resolved_bench,
-        )
-        return []
-    if proc.returncode != 0:
-        err = stderr_b.decode("utf-8", errors="replace").strip()
-        logger.warning(
-            "bench list-apps failed for site %s (exit %s): %s",
-            site_name,
-            proc.returncode,
-            err,
-        )
-        return []
-    text = stdout_b.decode("utf-8", errors="replace")
-    return _parse_bench_list_apps_stdout(text)
-
-
-def _list_installed_app_names_via_bench(bench_dir: Path, site_name: str) -> list[str]:
-    """Synchronous wrapper for :func:`_bench_list_app_names_async` (uses ``asyncio.run``)."""
-    try:
-        return asyncio.run(_bench_list_app_names_async(bench_dir, site_name))
-    except RuntimeError as exc:
-        if "asyncio.run() cannot be called from a running event loop" in str(exc):
-            logger.warning(
-                "bench list-apps skipped for site %s (nested event loop): %s",
-                site_name,
-                exc,
-            )
-            return []
-        raise
-
-
 def _parse_procfile(procfile_path: Path) -> dict[str, str]:
     """Parse ``Procfile`` lines into a mapping of process name to command string."""
     try:
@@ -283,12 +370,18 @@ def _parse_procfile(procfile_path: Path) -> dict[str, str]:
 
 
 def _site_installed_apps(bench_dir: Path, site_name: str) -> list[AppInfo]:
-    """Resolve installed apps for a site via ``bench --site <site> list-apps`` and read each version."""
+    """
+    Resolve installed apps from per-site ``apps.txt`` merged with ``sites/apps.txt``,
+    or from ``bench list-apps`` when per-site data is absent.
+
+    Each ``AppInfo.version`` comes from ``apps/<name>/<name>/__init__.py`` via
+    :func:`_read_app_version`.
+    """
     try:
         resolved_bench = bench_dir.resolve()
     except (OSError, RuntimeError):
         resolved_bench = bench_dir
-    app_names = _list_installed_app_names_via_bench(resolved_bench, site_name)
+    app_names = _installed_app_name_list(resolved_bench, site_name)
     apps: list[AppInfo] = []
     for name in app_names:
         version = _read_app_version(resolved_bench, name)
