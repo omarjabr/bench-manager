@@ -2,7 +2,8 @@
 
 **Version:** 1.0  
 **Phase:** V1 — Local Bench Management  
-**Status:** Draft
+**Status:** V1 Complete  
+**Tagged:** `v1.0.0`
 
 ---
 
@@ -506,15 +507,15 @@ V2 scope includes:
 ## 11. V1 Milestones
 
 
-| Milestone                       | Scope                                                                                       |
-| ------------------------------- | ------------------------------------------------------------------------------------------- |
-| **M1 — Backend foundation**     | FastAPI setup, bench discovery, REST API for benches/sites/apps, SQLite init                |
-| **M2 — Frontend scaffold**      | Vite + React + Tailwind + shadcn setup, routing, sidebar layout, dashboard with static data |
-| **M3 — Live dashboard**         | React Query integration, real bench data on dashboard, bench detail view                    |
-| **M4 — Process control**        | Start/stop benches, status polling, WebSocket bench status updates                          |
-| **M5 — Operations + streaming** | New Bench Wizard, New Site form, WebSocket log streaming via xterm.js                       |
-| **M6 — Templates**              | Template CRUD, "Use Template" in wizard, "Save as Template" shortcut                        |
-| **M7 — Settings + polish**      | Settings page, scan config, common apps registry, UI polish pass                            |
+| Milestone                       | Scope                                                                                       | Status |
+| ------------------------------- | ------------------------------------------------------------------------------------------- | ------ |
+| **M1 — Backend foundation**     | FastAPI setup, bench discovery, REST API for benches/sites/apps, SQLite init                | Done   |
+| **M2 — Frontend scaffold**      | Vite + React + Tailwind + shadcn setup, routing, sidebar layout, dashboard with static data | Done   |
+| **M3 — Live dashboard**         | React Query integration, real bench data on dashboard, bench detail view                    | Done   |
+| **M4 — Process control**        | Start/stop benches, status polling, WebSocket bench status updates                          | Done   |
+| **M5 — Operations + streaming** | New Bench Wizard, New Site form, WebSocket log streaming via xterm.js                       | Done   |
+| **M6 — Templates**              | Template CRUD, "Use Template" in wizard, "Save as Template" shortcut                        | Done   |
+| **M7 — Settings + polish**      | Settings page, scan config, common apps registry, UI polish pass                            | Done   |
 
 
 ---
