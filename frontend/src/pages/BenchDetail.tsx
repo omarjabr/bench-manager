@@ -329,19 +329,11 @@ export default function BenchDetail() {
     )
   }
 
-  const displayName = data?.name ?? benchName
-
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto">
-      <div className="flex flex-col gap-1">
-        <h2 className="font-heading text-xl font-semibold">
-          {isLoading && !showInitLog ? (
-            <Skeleton className="h-7 w-48" />
-          ) : (
-            displayName
-          )}
-        </h2>
-      </div>
+    <div className="flex flex-col gap-6">
+      {isLoading && !showInitLog ? (
+        <Skeleton className="h-7 w-48" />
+      ) : null}
 
       {data && (
         <div className="flex flex-wrap items-center gap-3">
@@ -548,31 +540,24 @@ export default function BenchDetail() {
           ) : null}
         </TabsContent>
         <TabsContent value="logs" className="mt-4">
-          <div className="w-full rounded-lg border border-zinc-700 bg-zinc-950 p-4 text-zinc-100 shadow-md dark:border-zinc-600 dark:bg-zinc-900">
-            <p className="mb-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Bench setup in progress
-            </p>
-            <LogStream
-              operationId={activeOperationId ?? "1"}
-              lines={initOperation.lines ?? ["test"]}
-              status={initOperation.status ?? "null"}
-              exitCode={initOperation.exitCode ?? null}
-            />
-          </div>
-          {/* {activeOperationId === null ? (
-            <div className="flex flex-col gap-4">
-              <p className="text-sm text-muted-foreground">
-                The bench directory is being created. Logs will load
-                automatically when discovery finds this bench.
+          {showInitLog && activeOperationId !== null ? (
+            <div className="w-full rounded-lg border border-border bg-card p-4 shadow-md">
+              <p className="mb-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Bench setup in progress
               </p>
+              <LogStream
+                operationId={activeOperationId}
+                lines={initOperation.lines}
+                status={initOperation.status}
+                exitCode={initOperation.exitCode}
+              />
             </div>
           ) : (
-            <div className="flex flex-col gap-4">
-              {showInitLog && activeOperationId !== null ? (
-                
-              ) : null}
-            </div>
-          )} */}
+            <p className="text-sm text-muted-foreground">
+              No active operation. Logs will appear here during bench init or
+              similar operations.
+            </p>
+          )}
         </TabsContent>
         <TabsContent value="processes" className="mt-4">
           {showInitLog && !data ? (

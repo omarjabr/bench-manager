@@ -1,3 +1,8 @@
+import {
+  Folder02FreeIcons,
+  Search01Icon,
+} from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
 import { useMemo } from "react"
 import { Link, useOutletContext } from "react-router-dom"
 
@@ -72,18 +77,20 @@ export default function Dashboard() {
 
   const total = data?.length ?? 0
   const running = useMemo(() => {
-    if (!data) {
-      return 0
-    }
+    if (!data) return 0
     return data.filter((b) => b.status === "running").length
+  }, [data])
+  const stopped = useMemo(() => {
+    if (!data) return 0
+    return data.filter((b) => b.status === "stopped").length
   }, [data])
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto">
+    <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
         <h2 className="font-heading text-xl font-semibold">Dashboard</h2>
         <p className="text-muted-foreground text-sm">
-          {total} {total === 1 ? "bench" : "benches"} · {running} running
+          {total} {total === 1 ? "bench" : "benches"} · {running} running · {stopped} stopped
         </p>
       </div>
 
@@ -120,13 +127,22 @@ export default function Dashboard() {
       ) : null}
 
       {!isLoading && !isError && data?.length === 0 ? (
-        <p className="text-muted-foreground text-sm">
-          No benches found. Check the scan directory in{" "}
-          <Link to="/settings" className="text-primary underline-offset-4 hover:underline">
-            Settings
-          </Link>
-          .
-        </p>
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 py-16 text-center">
+          <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+            <HugeiconsIcon icon={Folder02FreeIcons} className="size-6 text-muted-foreground" />
+          </div>
+          <div className="max-w-sm space-y-2">
+            <p className="font-heading text-lg font-medium">No benches found</p>
+            <p className="text-muted-foreground text-sm">
+              Bench Manager couldn&apos;t find any Frappe benches. Check the scan
+              directory in{" "}
+              <Link to="/settings" className="text-primary underline-offset-4 hover:underline">
+                Settings
+              </Link>
+              .
+            </p>
+          </div>
+        </div>
       ) : null}
 
       {!isLoading &&
@@ -134,9 +150,17 @@ export default function Dashboard() {
       data !== undefined &&
       data.length > 0 &&
       filtered.length === 0 ? (
-        <p className="text-muted-foreground text-sm">
-          No benches match your search.
-        </p>
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 py-16 text-center">
+          <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+            <HugeiconsIcon icon={Search01Icon} className="size-6 text-muted-foreground" />
+          </div>
+          <div className="max-w-sm space-y-2">
+            <p className="font-heading text-lg font-medium">No results</p>
+            <p className="text-muted-foreground text-sm">
+              No benches match your search. Try a different query.
+            </p>
+          </div>
+        </div>
       ) : null}
     </div>
   )

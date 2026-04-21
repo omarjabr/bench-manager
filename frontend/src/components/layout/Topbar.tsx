@@ -1,20 +1,27 @@
-import { Add01Icon, Menu01Icon } from "@hugeicons/core-free-icons"
+import { Add01Icon, ArrowLeft01Icon, Menu01Icon } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { useLocation } from "react-router-dom"
+import { useLocation, useNavigate, useParams } from "react-router-dom"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useUiStore } from "@/stores/ui.store"
 
-function usePageTitle(): string {
+function usePageInfo(): { title: string; showBack: boolean } {
   const { pathname } = useLocation()
+  const { name } = useParams()
 
-  if (pathname === "/") return "Dashboard"
-  if (pathname.startsWith("/benches/")) return "Bench"
-  if (pathname === "/templates") return "Templates"
-  if (pathname === "/settings") return "Settings"
-  return "Bench Manager"
+  if (pathname === "/") return { title: "Dashboard", showBack: false }
+  if (pathname.startsWith("/benches/")) {
+    const benchName = name
+      ? decodeURIComponent(name)
+      : "Bench"
+    return { title: benchName, showBack: true }
+  }
+  if (pathname === "/templates") return { title: "Templates", showBack: false }
+  if (pathname === "/database") return { title: "Database", showBack: false }
+  if (pathname === "/settings") return { title: "Settings", showBack: false }
+  return { title: "Bench Manager", showBack: false }
 }
 
 type TopbarProps = {
@@ -28,7 +35,8 @@ export function Topbar({
   onSearchChange,
   onNewBench,
 }: TopbarProps) {
-  const title = usePageTitle()
+  const { title, showBack } = usePageInfo()
+  const navigate = useNavigate()
   const isMobile = useIsMobile()
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
 
@@ -44,6 +52,18 @@ export function Topbar({
           aria-label="Open menu"
         >
           <HugeiconsIcon icon={Menu01Icon} className="size-5" />
+        </Button>
+      )}
+      {showBack && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="shrink-0"
+          onClick={() => navigate("/")}
+          aria-label="Back to Dashboard"
+        >
+          <HugeiconsIcon icon={ArrowLeft01Icon} className="size-5" />
         </Button>
       )}
       <h1 className="min-w-0 shrink truncate font-heading text-lg font-semibold tracking-tight">

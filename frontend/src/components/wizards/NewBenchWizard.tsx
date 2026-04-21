@@ -35,7 +35,6 @@ import {
 } from "@/lib/api"
 import {
   customRepoUrlSchema,
-  DEFAULT_APP_REGISTRY,
   newBenchWizardAppsStepSchema,
   newBenchWizardFullFormSchema,
   type NewBenchWizardFullFormValues,
@@ -43,12 +42,6 @@ import {
 import { useUiStore } from "@/stores/ui.store"
 
 type SelectedApp = { name: string; repo_url: string; branch?: string }
-
-function defaultBranchForFrappeVersion(
-  v: NewBenchWizardFullFormValues["frappeVersion"]
-): string {
-  return v
-}
 
 type NewBenchWizardProps = {
   open: boolean
@@ -184,7 +177,13 @@ export function NewBenchWizard({
     onOpenChange(next)
   }
 
-  const toggleRegistryApp = (item: { name: string; repo_url: string }) => {
+  const appRegistry = settings?.app_registry ?? []
+
+  const toggleRegistryApp = (item: {
+    name: string
+    repo_url: string
+    default_branch: string
+  }) => {
     setSelectedApps((prev) => {
       const exists = prev.some((a) => a.repo_url === item.repo_url)
       if (exists) {
@@ -193,8 +192,9 @@ export function NewBenchWizard({
       return [
         ...prev,
         {
-          ...item,
-          branch: defaultBranchForFrappeVersion(getValues("frappeVersion")),
+          name: item.name,
+          repo_url: item.repo_url,
+          branch: item.default_branch,
         },
       ]
     })
@@ -490,7 +490,7 @@ export function NewBenchWizard({
               your site. You can skip this step.
             </p>
             <div className="flex max-h-64 flex-col gap-2 overflow-y-auto rounded-lg border border-border p-3">
-              {DEFAULT_APP_REGISTRY.map((item) => {
+              {appRegistry.map((item) => {
                 const selected = selectedApps.find(
                   (a) => a.repo_url === item.repo_url
                 )

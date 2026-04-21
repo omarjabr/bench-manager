@@ -58,6 +58,12 @@ export type BenchDetail = {
   ports: Record<string, string>
 }
 
+export type AppRegistryEntry = {
+  name: string
+  repo_url: string
+  default_branch: string
+}
+
 export type Settings = {
   root_scan_dir: string
   excluded_paths: string[]
@@ -67,6 +73,7 @@ export type Settings = {
   db_host: string
   db_user: string
   db_password: string
+  app_registry: AppRegistryEntry[]
 }
 
 export type DatabaseStatus = {
@@ -142,19 +149,7 @@ export async function getSettings(): Promise<Settings> {
 export async function updateSettings(
   data: Partial<Settings>
 ): Promise<Settings> {
-  const current = await getSettings()
-  const body: Settings = {
-    root_scan_dir: data.root_scan_dir ?? current.root_scan_dir,
-    excluded_paths: data.excluded_paths ?? current.excluded_paths,
-    scan_interval_seconds:
-      data.scan_interval_seconds ?? current.scan_interval_seconds,
-    backend_host: data.backend_host ?? current.backend_host,
-    backend_port: data.backend_port ?? current.backend_port,
-    db_host: data.db_host ?? current.db_host,
-    db_user: data.db_user ?? current.db_user,
-    db_password: data.db_password ?? current.db_password,
-  }
-  const res = await api.put<Settings>("/api/settings", body)
+  const res = await api.put<Settings>("/api/settings", data)
   return res.data
 }
 

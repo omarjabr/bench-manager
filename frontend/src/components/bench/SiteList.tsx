@@ -2,6 +2,7 @@ import {
   Add01Icon,
   ArrowDown01Icon,
   ArrowUp01Icon,
+  InternetIcon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { useMemo, useState } from "react"
@@ -89,6 +90,22 @@ function SiteRow({
             </Button>
           </CollapsibleTrigger>
           <span className="min-w-0 flex-1 font-medium">{site.name}</span>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="shrink-0 gap-1"
+            asChild
+          >
+            <a
+              href={`http://${site.name}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <HugeiconsIcon icon={InternetIcon} className="size-4" />
+              Open in Browser
+            </a>
+          </Button>
           <Button
             type="button"
             size="sm"

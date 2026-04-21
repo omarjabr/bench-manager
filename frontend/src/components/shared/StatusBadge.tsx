@@ -29,7 +29,11 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
       )}
     >
       <span
-        className={cn("size-2 shrink-0 rounded-full", DOT_COLORS[status])}
+        className={cn(
+          "size-2 shrink-0 rounded-full",
+          DOT_COLORS[status],
+          status === "running" && "animate-pulse-dot"
+        )}
         aria-hidden
       />
       {LABELS[status]}

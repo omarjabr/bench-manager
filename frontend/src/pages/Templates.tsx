@@ -59,7 +59,7 @@ export default function Templates() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto">
+    <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <h2 className="font-heading text-xl font-semibold">Templates</h2>
         <Button

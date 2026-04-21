@@ -158,6 +158,7 @@ export function TemplateCard({ template, onEdit }: TemplateCardProps) {
             <AlertDialogAction
               onClick={() => void handleConfirmDelete()}
               disabled={deleteMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete
             </AlertDialogAction>

@@ -24,24 +24,16 @@ import {
 } from "@/components/ui/select"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Spinner } from "@/components/ui/spinner"
+import { useSettings } from "@/hooks/useSettings"
 import { useCreateTemplate, useUpdateTemplate } from "@/hooks/useTemplates"
 import { getApiErrorMessage, type Template } from "@/lib/api"
-import {
-  customRepoUrlSchema,
-  DEFAULT_APP_REGISTRY,
-} from "@/schemas/bench.schema"
+import { customRepoUrlSchema } from "@/schemas/bench.schema"
 import {
   templateFormSchema,
   type TemplateFormValues,
 } from "@/schemas/template.schema"
 
 type SelectedApp = { name: string; repo_url: string; branch?: string }
-
-function defaultBranchForFrappeVersion(
-  v: TemplateFormValues["frappeVersion"]
-): string {
-  return v
-}
 
 function repoNameFromUrl(url: string): string {
   try {
@@ -68,6 +60,8 @@ export function TemplateFormDialog({
   mode,
   initialTemplate,
 }: TemplateFormDialogProps) {
+  const { data: settingsData } = useSettings()
+  const appRegistry = settingsData?.app_registry ?? []
   const createMutation = useCreateTemplate()
   const updateMutation = useUpdateTemplate()
   const [selectedApps, setSelectedApps] = useState<SelectedApp[]>([])
@@ -128,7 +122,11 @@ export function TemplateFormDialog({
     setFieldErrors({})
   }, [open, mode, initialTemplate, reset])
 
-  const toggleRegistryApp = (item: { name: string; repo_url: string }) => {
+  const toggleRegistryApp = (item: {
+    name: string
+    repo_url: string
+    default_branch: string
+  }) => {
     setSelectedApps((prev) => {
       const exists = prev.some((a) => a.repo_url === item.repo_url)
       if (exists) {
@@ -137,8 +135,9 @@ export function TemplateFormDialog({
       return [
         ...prev,
         {
-          ...item,
-          branch: defaultBranchForFrappeVersion(getValues("frappeVersion")),
+          name: item.name,
+          repo_url: item.repo_url,
+          branch: item.default_branch,
         },
       ]
     })
@@ -276,7 +275,7 @@ export function TemplateFormDialog({
                   <span className="font-mono">bench get-app</span>.
                 </p>
                 <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
-                  {DEFAULT_APP_REGISTRY.map((item) => {
+                  {appRegistry.map((item) => {
                     const selected = selectedApps.find(
                       (a) => a.repo_url === item.repo_url
                     )
