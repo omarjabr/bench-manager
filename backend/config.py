@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     backend_host: str = Field(default="127.0.0.1")
     backend_port: int = Field(default=8000, ge=1, le=65535)
 
+    db_host: str = Field(default="127.0.0.1")
+    db_user: str = Field(default="root")
+    db_password: str = Field(default="")
+
     @field_validator("root_scan_dir", mode="before")
     @classmethod
     def parse_root_scan_dir(cls, value: str | Path) -> Path:
@@ -64,6 +68,9 @@ def persist_settings(settings: Settings) -> None:
         f"SCAN_INTERVAL_SECONDS={payload['scan_interval_seconds']}",
         f"BACKEND_HOST={payload['backend_host']}",
         f"BACKEND_PORT={payload['backend_port']}",
+        f"DB_HOST={payload['db_host']}",
+        f"DB_USER={payload['db_user']}",
+        f"DB_PASSWORD={payload['db_password']}",
     ]
     _ENV_FILE_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
     get_settings.cache_clear()

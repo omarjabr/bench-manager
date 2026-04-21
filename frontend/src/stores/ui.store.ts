@@ -1,5 +1,7 @@
 import { create } from "zustand"
 
+import type { Template } from "@/lib/api"
+
 export const UI_THEME_STORAGE_KEY = "bench-manager-theme"
 
 type Theme = "light" | "dark"
@@ -14,6 +16,11 @@ type UiState = {
   setActiveBench: (name: string | null) => void
   activeOperationId: string | null
   setActiveOperationId: (id: string | null) => void
+  /** Data to pre-fill New Bench Wizard (Step 1 Frappe version + Step 3 apps). Cleared after apply. */
+  wizardTemplate: Template | null
+  setWizardTemplate: (t: Template | null) => void
+  newBenchWizardOpen: boolean
+  setNewBenchWizardOpen: (open: boolean) => void
 }
 
 function readStoredTheme(): Theme {
@@ -44,6 +51,8 @@ export const useUiStore = create<UiState>((set) => ({
   theme: initialTheme,
   activeBenchName: null,
   activeOperationId: null,
+  wizardTemplate: null,
+  newBenchWizardOpen: false,
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setTheme: (theme) => {
     applyThemeToDocument(theme)
@@ -56,4 +65,6 @@ export const useUiStore = create<UiState>((set) => ({
   },
   setActiveBench: (name) => set({ activeBenchName: name }),
   setActiveOperationId: (id) => set({ activeOperationId: id }),
+  setWizardTemplate: (t) => set({ wizardTemplate: t }),
+  setNewBenchWizardOpen: (open) => set({ newBenchWizardOpen: open }),
 }))

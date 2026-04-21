@@ -332,7 +332,7 @@ export default function BenchDetail() {
   const displayName = data?.name ?? benchName
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto">
       <div className="flex flex-col gap-1">
         <h2 className="font-heading text-xl font-semibold">
           {isLoading && !showInitLog ? (

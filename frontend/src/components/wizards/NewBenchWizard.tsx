@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useQuery } from "@tanstack/react-query"
 import axios from "axios"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Controller, useForm } from "react-hook-form"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
@@ -25,7 +25,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { getApiErrorMessage, getSettings, postOperationInit } from "@/lib/api"
+import { Spinner } from "@/components/ui/spinner"
+import { useCreateTemplate } from "@/hooks/useTemplates"
+import {
+  getApiErrorMessage,
+  getSettings,
+  postOperationInit,
+  type Template,
+} from "@/lib/api"
 import {
   customRepoUrlSchema,
   DEFAULT_APP_REGISTRY,
@@ -46,6 +53,8 @@ function defaultBranchForFrappeVersion(
 type NewBenchWizardProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Optional template used to pre-fill Frappe version and apps (also see `wizardTemplate` in the UI store). */
+  template?: Template | null
 }
 
 function repoNameFromUrl(url: string): string {
@@ -59,10 +68,18 @@ function repoNameFromUrl(url: string): string {
   }
 }
 
-export function NewBenchWizard({ open, onOpenChange }: NewBenchWizardProps) {
+export function NewBenchWizard({
+  open,
+  onOpenChange,
+  template = null,
+}: NewBenchWizardProps) {
   const navigate = useNavigate()
   const setActiveOperationId = useUiStore((s) => s.setActiveOperationId)
   const setActiveBench = useUiStore((s) => s.setActiveBench)
+  const wizardTemplate = useUiStore((s) => s.wizardTemplate)
+  const setWizardTemplate = useUiStore((s) => s.setWizardTemplate)
+  const createTemplateMutation = useCreateTemplate()
+  const prefilledRef = useRef(false)
 
   const { data: settings } = useQuery({
     queryKey: ["settings"],
@@ -111,6 +128,35 @@ export function NewBenchWizard({ open, onOpenChange }: NewBenchWizardProps) {
     }
   }, [settings, parentDirInitialized, open, setValue])
 
+  useEffect(() => {
+    if (!open) {
+      prefilledRef.current = false
+      return
+    }
+    if (prefilledRef.current) {
+      return
+    }
+    const source = template ?? wizardTemplate
+    if (!source) {
+      return
+    }
+    prefilledRef.current = true
+    setValue(
+      "frappeVersion",
+      source.frappe_version as NewBenchWizardFullFormValues["frappeVersion"]
+    )
+    setSelectedApps(
+      source.apps.map((a) => ({
+        name: a.name,
+        repo_url: a.repo_url,
+        ...(a.branch !== undefined && a.branch !== ""
+          ? { branch: a.branch }
+          : {}),
+      }))
+    )
+    setWizardTemplate(null)
+  }, [open, template, wizardTemplate, setValue, setWizardTemplate])
+
   const resetWizard = () => {
     setStep(1)
     reset({
@@ -127,6 +173,8 @@ export function NewBenchWizard({ open, onOpenChange }: NewBenchWizardProps) {
     setCustomBranchInput("")
     setFieldErrors({})
     clearErrors()
+    setWizardTemplate(null)
+    prefilledRef.current = false
   }
 
   const handleOpenChange = (next: boolean) => {
@@ -223,6 +271,25 @@ export function NewBenchWizard({ open, onOpenChange }: NewBenchWizardProps) {
   }
 
   const watched = form.watch()
+
+  const saveAsTemplate = async () => {
+    const values = getValues()
+    const name = values.benchName.trim()
+    if (name.length === 0) {
+      toast.error("Enter a bench name to use as the template name.")
+      return
+    }
+    try {
+      await createTemplateMutation.mutateAsync({
+        name,
+        frappe_version: values.frappeVersion,
+        apps: selectedApps,
+      })
+      toast.success("Template saved.")
+    } catch (error) {
+      toast.error(getApiErrorMessage(error))
+    }
+  }
 
   const createBench = async () => {
     setFieldErrors({})
@@ -568,9 +635,23 @@ export function NewBenchWizard({ open, onOpenChange }: NewBenchWizardProps) {
               </Button>
             ) : null}
             {step === 4 ? (
-              <Button type="button" onClick={() => void createBench()}>
-                Create Bench
-              </Button>
+              <>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="gap-2"
+                  disabled={createTemplateMutation.isPending}
+                  onClick={() => void saveAsTemplate()}
+                >
+                  {createTemplateMutation.isPending ? (
+                    <Spinner className="size-4" />
+                  ) : null}
+                  Save as Template
+                </Button>
+                <Button type="button" onClick={() => void createBench()}>
+                  Create Bench
+                </Button>
+              </>
             ) : null}
           </div>
         </DialogFooter>

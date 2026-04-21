@@ -25,7 +25,9 @@ function ThemeSync() {
 
 function AppShell() {
   const [searchQuery, setSearchQuery] = useState("")
-  const [newBenchOpen, setNewBenchOpen] = useState(false)
+  const newBenchWizardOpen = useUiStore((s) => s.newBenchWizardOpen)
+  const setNewBenchWizardOpen = useUiStore((s) => s.setNewBenchWizardOpen)
+  const setWizardTemplate = useUiStore((s) => s.setWizardTemplate)
 
   return (
     <div className="flex h-screen min-h-0 w-full overflow-hidden">
@@ -34,13 +36,19 @@ function AppShell() {
         <Topbar
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
-          onNewBench={() => setNewBenchOpen(true)}
+          onNewBench={() => {
+            setWizardTemplate(null)
+            setNewBenchWizardOpen(true)
+          }}
         />
-        <div className="min-h-0 flex-1 overflow-y-auto p-6">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-6">
           <Outlet context={{ searchQuery, setSearchQuery }} />
         </div>
       </div>
-      <NewBenchWizard open={newBenchOpen} onOpenChange={setNewBenchOpen} />
+      <NewBenchWizard
+        open={newBenchWizardOpen}
+        onOpenChange={setNewBenchWizardOpen}
+      />
     </div>
   )
 }

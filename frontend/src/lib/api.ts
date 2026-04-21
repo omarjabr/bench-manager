@@ -64,6 +64,50 @@ export type Settings = {
   scan_interval_seconds: number
   backend_host: string
   backend_port: number
+  db_host: string
+  db_user: string
+  db_password: string
+}
+
+export type DatabaseStatus = {
+  connected: boolean
+  host: string
+  user: string
+}
+
+export type ColumnMeta = {
+  name: string
+  type: string
+  nullable: boolean
+  key: string
+  default: unknown
+}
+
+export type TableRowsResponse = {
+  columns: string[]
+  rows: unknown[][]
+  total: number
+  page: number
+  page_size: number
+}
+
+export type UpdateCellRequest = {
+  primary_key_col: string
+  primary_key_val: string
+  column: string
+  value: string
+}
+
+export type DeleteRowRequest = {
+  primary_key_col: string
+  primary_key_val: string
+}
+
+export type QueryResult = {
+  columns: string[]
+  rows: unknown[][]
+  truncated: boolean
+  total: number
 }
 
 export async function getBenches(): Promise<BenchSummary[]> {
@@ -106,8 +150,84 @@ export async function updateSettings(
       data.scan_interval_seconds ?? current.scan_interval_seconds,
     backend_host: data.backend_host ?? current.backend_host,
     backend_port: data.backend_port ?? current.backend_port,
+    db_host: data.db_host ?? current.db_host,
+    db_user: data.db_user ?? current.db_user,
+    db_password: data.db_password ?? current.db_password,
   }
   const res = await api.put<Settings>("/api/settings", body)
+  return res.data
+}
+
+export async function getDatabaseStatus(): Promise<DatabaseStatus> {
+  const res = await api.get<DatabaseStatus>("/api/database/status")
+  return res.data
+}
+
+export async function getDatabases(): Promise<string[]> {
+  const res = await api.get<string[]>("/api/database/databases")
+  return res.data
+}
+
+export async function getDatabaseTables(dbName: string): Promise<string[]> {
+  const res = await api.get<string[]>(
+    `/api/database/${encodeURIComponent(dbName)}/tables`
+  )
+  return res.data
+}
+
+export async function getTableColumns(
+  dbName: string,
+  tableName: string
+): Promise<ColumnMeta[]> {
+  const res = await api.get<ColumnMeta[]>(
+    `/api/database/${encodeURIComponent(dbName)}/${encodeURIComponent(tableName)}/columns`
+  )
+  return res.data
+}
+
+export async function getTableRows(
+  dbName: string,
+  tableName: string,
+  page: number,
+  pageSize = 25
+): Promise<TableRowsResponse> {
+  const res = await api.get<TableRowsResponse>(
+    `/api/database/${encodeURIComponent(dbName)}/${encodeURIComponent(tableName)}/rows`,
+    { params: { page, page_size: pageSize } }
+  )
+  return res.data
+}
+
+export async function updateCell(
+  dbName: string,
+  tableName: string,
+  body: UpdateCellRequest
+): Promise<void> {
+  await api.patch(
+    `/api/database/${encodeURIComponent(dbName)}/${encodeURIComponent(tableName)}/rows`,
+    body
+  )
+}
+
+export async function deleteRow(
+  dbName: string,
+  tableName: string,
+  body: DeleteRowRequest
+): Promise<void> {
+  await api.delete(
+    `/api/database/${encodeURIComponent(dbName)}/${encodeURIComponent(tableName)}/rows`,
+    { data: body }
+  )
+}
+
+export async function runQuery(
+  dbName: string,
+  body: { sql: string }
+): Promise<QueryResult> {
+  const res = await api.post<QueryResult>(
+    `/api/database/${encodeURIComponent(dbName)}/query`,
+    body
+  )
   return res.data
 }
 
@@ -137,6 +257,59 @@ export async function postOperationInit(
   body: InitOperationBody
 ): Promise<OperationIdResponse> {
   const res = await api.post<OperationIdResponse>("/api/operations/init", body)
+  return res.data
+}
+
+export type TemplateApp = {
+  name: string
+  repo_url: string
+  branch?: string
+}
+
+export type Template = {
+  id: string
+  name: string
+  frappe_version: string
+  apps: TemplateApp[]
+  created_at: string
+  last_used_at: string | null
+}
+
+export type TemplateCreate = {
+  name: string
+  frappe_version: string
+  apps: TemplateApp[]
+}
+
+export async function getTemplates(): Promise<Template[]> {
+  const res = await api.get<Template[]>("/api/templates")
+  return res.data
+}
+
+export async function createTemplate(data: TemplateCreate): Promise<Template> {
+  const res = await api.post<Template>("/api/templates", data)
+  return res.data
+}
+
+export async function updateTemplate(
+  id: string,
+  data: TemplateCreate
+): Promise<Template> {
+  const res = await api.put<Template>(
+    `/api/templates/${encodeURIComponent(id)}`,
+    data
+  )
+  return res.data
+}
+
+export async function deleteTemplate(id: string): Promise<void> {
+  await api.delete(`/api/templates/${encodeURIComponent(id)}`)
+}
+
+export async function useTemplate(id: string): Promise<Template> {
+  const res = await api.post<Template>(
+    `/api/templates/${encodeURIComponent(id)}/use`
+  )
   return res.data
 }
 
