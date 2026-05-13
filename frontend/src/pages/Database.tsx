@@ -1,15 +1,21 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 
 import { DatabaseDataGrid } from "@/components/database/DatabaseDataGrid"
 import { DatabaseSqlRunner } from "@/components/database/DatabaseSqlRunner"
 import { DatabaseExplorerSidebar } from "@/components/database/DatabaseExplorerSidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { globalDbScope } from "@/lib/api"
 
 export default function Database() {
   const [selectedDb, setSelectedDb] = useState<string | null>(null)
   const [selectedTable, setSelectedTable] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [sqlPanelHeight, setSqlPanelHeight] = useState(220)
+
+  const apiScope = useMemo(
+    () => (selectedDb ? globalDbScope(selectedDb) : null),
+    [selectedDb]
+  )
 
   const startDrag = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -50,13 +56,13 @@ export default function Database() {
               }}
             />
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-              {!selectedTable || !selectedDb ? (
+              {!selectedTable || !apiScope ? (
                 <div className="text-muted-foreground flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-md border border-dashed p-8 text-center text-sm">
                   Select a table to begin
                 </div>
               ) : (
                 <DatabaseDataGrid
-                  dbName={selectedDb}
+                  apiScope={apiScope}
                   tableName={selectedTable}
                   page={page}
                   onPageChange={setPage}
@@ -79,7 +85,7 @@ export default function Database() {
               Query runner
             </h3>
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <DatabaseSqlRunner dbName={selectedDb} />
+              <DatabaseSqlRunner apiScope={apiScope} />
             </div>
           </div>
         </div>

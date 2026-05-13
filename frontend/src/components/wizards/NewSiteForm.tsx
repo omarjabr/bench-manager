@@ -27,6 +27,7 @@ import {
   newSiteOperationSchema,
   type NewSiteOperationFormValues,
 } from "@/schemas/site.schema"
+import { useUiStore } from "@/stores/ui.store"
 
 type NewSiteFormProps = {
   open: boolean
@@ -42,6 +43,7 @@ export function NewSiteForm({
   availableApps,
 }: NewSiteFormProps) {
   const queryClient = useQueryClient()
+  const serverId = useUiStore((s) => s.currentServerId)
   const [operationId, setOperationId] = useState<string | null>(null)
   const { lines, status, exitCode } = useOperation(operationId)
 
@@ -85,7 +87,7 @@ export function NewSiteForm({
         admin_password: values.adminPassword,
         db_root_password: values.dbRootPassword,
         apps: values.apps,
-      })
+      }, serverId)
       setOperationId(res.operation_id)
     } catch (error) {
       toast.error(getApiErrorMessage(error))
@@ -94,8 +96,8 @@ export function NewSiteForm({
 
   useEffect(() => {
     if (status === "done" && exitCode === 0) {
-      void queryClient.invalidateQueries({ queryKey: ["bench", benchName] })
-      void queryClient.invalidateQueries({ queryKey: ["benches"] })
+      void queryClient.invalidateQueries({ queryKey: ["bench", benchName, serverId] })
+      void queryClient.invalidateQueries({ queryKey: ["benches", serverId] })
     }
   }, [status, exitCode, queryClient, benchName])
 

@@ -10,7 +10,9 @@ import { cn } from "@/lib/utils"
 import BenchDetail from "@/pages/BenchDetail"
 import Dashboard from "@/pages/Dashboard"
 import Database from "@/pages/Database"
+import Servers from "@/pages/Servers"
 import Settings from "@/pages/Settings"
+import SystemCheck from "@/pages/SystemCheck"
 import Templates from "@/pages/Templates"
 import { useUiStore } from "@/stores/ui.store"
 
@@ -74,7 +76,9 @@ export function App() {
             <Route path="/benches/:name" element={<BenchDetail />} />
             <Route path="/templates" element={<Templates />} />
             <Route path="/database" element={<Database />} />
+            <Route path="/servers" element={<Servers />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/system-check" element={<SystemCheck />} />
           </Route>
         </Routes>
       </BrowserRouter>

@@ -2,10 +2,11 @@
 
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from config import Settings, get_settings, persist_settings
+from services.dispatcher import call_remote, get_server_id, is_local
 
 router = APIRouter(tags=["settings"])
 
@@ -64,14 +65,29 @@ def _settings_to_response(s: Settings) -> SettingsResponse:
 
 
 @router.get("/settings", response_model=SettingsResponse)
-async def read_settings() -> SettingsResponse:
+async def read_settings(server_id: str = Depends(get_server_id)) -> SettingsResponse:
     """Return the active settings values."""
+    if not is_local(server_id):
+        data = await call_remote(server_id, "GET", "/api/settings")
+        return SettingsResponse.model_validate(data)
     return _settings_to_response(get_settings())
 
 
 @router.put("/settings", response_model=SettingsResponse)
-async def update_settings(body: SettingsUpdateRequest) -> SettingsResponse:
+async def update_settings(
+    body: SettingsUpdateRequest,
+    server_id: str = Depends(get_server_id),
+) -> SettingsResponse:
     """Apply a partial update to settings and persist them to ``.env``."""
+    if not is_local(server_id):
+        data = await call_remote(
+            server_id,
+            "PUT",
+            "/api/settings",
+            body=body.model_dump(exclude_none=True),
+        )
+        return SettingsResponse.model_validate(data)
+
     current = get_settings()
 
     merged = {

@@ -1,6 +1,4 @@
-import type { BenchStatus } from "@/lib/api"
-
-const BENCH_WS_URL = "ws://localhost:8000/ws/benches"
+import { getBenchesWebSocketUrl, type BenchStatus } from "@/lib/api"
 
 const MAX_RECONNECT_ATTEMPTS = 10
 
@@ -18,6 +16,7 @@ export type CreateBenchSocketOptions = {
   onMessage: (data: BenchStatusEvent) => void
   onError?: () => void
   onConnectionChange?: (connected: boolean) => void
+  serverId?: string
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -74,7 +73,7 @@ function safeCloseWebSocket(socket: WebSocket | null): void {
  * and stops after ``MAX_RECONNECT_ATTEMPTS`` failed connection cycles.
  */
 export function createBenchSocket(options: CreateBenchSocketOptions): () => void {
-  const { onMessage, onError, onConnectionChange } = options
+  const { onMessage, onError, onConnectionChange, serverId } = options
   let ws: WebSocket | null = null
   let closed = false
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -108,7 +107,7 @@ export function createBenchSocket(options: CreateBenchSocketOptions): () => void
       return
     }
     clearTimer()
-    const socket = new WebSocket(BENCH_WS_URL)
+    const socket = new WebSocket(getBenchesWebSocketUrl(serverId))
     ws = socket
 
     socket.onopen = () => {

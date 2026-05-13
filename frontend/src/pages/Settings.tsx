@@ -41,6 +41,7 @@ import {
   updateSettings,
   type AppRegistryEntry,
 } from "@/lib/api"
+import { useUiStore } from "@/stores/ui.store"
 import {
   appRegistryItemSchema,
   databaseConnectionSchema,
@@ -63,6 +64,7 @@ function SettingsSkeleton() {
 
 function DiscoveryCard() {
   const queryClient = useQueryClient()
+  const serverId = useUiStore((s) => s.currentServerId)
   const { data: settings } = useSettings()
   const [excludedPaths, setExcludedPaths] = useState<string[]>([])
   const [tagInput, setTagInput] = useState("")
@@ -98,11 +100,11 @@ function DiscoveryCard() {
         root_scan_dir: values.root_scan_dir,
         excluded_paths: values.excluded_paths,
         scan_interval_seconds: values.scan_interval_seconds,
-      }),
+      }, serverId),
     onSuccess: () => {
       toast.success("Discovery settings saved")
-      void queryClient.invalidateQueries({ queryKey: ["settings"] })
-      void queryClient.invalidateQueries({ queryKey: ["benches"] })
+      void queryClient.invalidateQueries({ queryKey: ["settings", serverId] })
+      void queryClient.invalidateQueries({ queryKey: ["benches", serverId] })
     },
     onError: (e) => toast.error(getApiErrorMessage(e)),
   })
@@ -220,6 +222,7 @@ function DiscoveryCard() {
 
 function AppRegistryCard() {
   const queryClient = useQueryClient()
+  const serverId = useUiStore((s) => s.currentServerId)
   const { data: settings } = useSettings()
   const [showAddForm, setShowAddForm] = useState(false)
 
@@ -231,9 +234,9 @@ function AppRegistryCard() {
 
   const saveMutation = useMutation({
     mutationFn: (registry: AppRegistryEntry[]) =>
-      updateSettings({ app_registry: registry }),
+      updateSettings({ app_registry: registry }, serverId),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["settings"] })
+      void queryClient.invalidateQueries({ queryKey: ["settings", serverId] })
     },
     onError: (e) => toast.error(getApiErrorMessage(e)),
   })
@@ -420,6 +423,7 @@ function AppRegistryCard() {
 
 function DatabaseConnectionCard() {
   const queryClient = useQueryClient()
+  const serverId = useUiStore((s) => s.currentServerId)
   const location = useLocation()
   const { data: settings, isLoading } = useSettings()
 
@@ -453,11 +457,11 @@ function DatabaseConnectionCard() {
 
   const mutation = useMutation({
     mutationFn: (values: DatabaseConnectionFormValues) =>
-      updateSettings(values),
+      updateSettings(values, serverId),
     onSuccess: () => {
       toast.success("Database settings saved")
-      void queryClient.invalidateQueries({ queryKey: ["settings"] })
-      void queryClient.invalidateQueries({ queryKey: ["database", "status"] })
+      void queryClient.invalidateQueries({ queryKey: ["settings", serverId] })
+      void queryClient.invalidateQueries({ queryKey: ["database", "status", serverId] })
     },
     onError: (e) => toast.error(getApiErrorMessage(e)),
   })

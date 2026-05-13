@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Request, WebSocket
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket
 from pydantic import BaseModel, Field, field_validator
 from starlette.websockets import WebSocketDisconnect
 
@@ -21,6 +21,7 @@ from services.executor import (
     stream_command,
 )
 from services import process
+from services.dispatcher import call_remote, get_server_id, is_local, proxy_websocket
 from ws.manager import ConnectionManager
 
 logger = logging.getLogger(__name__)
@@ -160,6 +161,82 @@ class InstallAppOperationRequest(BaseModel):
             raise ValueError(
                 "site_name must end with .localhost or contain a dot (e.g. site.localhost)"
             )
+        return value
+
+
+class BenchUpdateRequest(BaseModel):
+    """Payload for ``POST /api/operations/bench-update``."""
+
+    bench_name: str = Field(min_length=1)
+    reset: bool = Field(default=False)
+    no_backup: bool = Field(default=False)
+
+    @field_validator("bench_name")
+    @classmethod
+    def validate_bench_name_update(cls, value: str) -> str:
+        if not _BENCH_NAME_PATTERN.fullmatch(value):
+            raise ValueError(
+                "bench_name may only contain letters, digits, underscores, and hyphens"
+            )
+        return value
+
+
+_SITE_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9._-]+$")
+
+
+class SiteBackupRequest(BaseModel):
+    """Payload for ``POST /api/operations/site-backup``."""
+
+    bench_name: str = Field(min_length=1)
+    site_name: str = Field(min_length=1)
+    with_files: bool = Field(default=False)
+
+    @field_validator("bench_name")
+    @classmethod
+    def validate_bench_name_backup(cls, value: str) -> str:
+        if not _BENCH_NAME_PATTERN.fullmatch(value):
+            raise ValueError(
+                "bench_name may only contain letters, digits, underscores, and hyphens"
+            )
+        return value
+
+    @field_validator("site_name")
+    @classmethod
+    def validate_site_name_backup(cls, value: str) -> str:
+        if not _SITE_NAME_PATTERN.fullmatch(value):
+            raise ValueError("site_name contains invalid characters")
+        return value
+
+
+class SiteRestoreRequest(BaseModel):
+    """Payload for ``POST /api/operations/site-restore``."""
+
+    bench_name: str = Field(min_length=1)
+    site_name: str = Field(min_length=1)
+    backup_path: str = Field(min_length=1)
+    db_root_password: str = Field(min_length=1)
+
+    @field_validator("bench_name")
+    @classmethod
+    def validate_bench_name_restore(cls, value: str) -> str:
+        if not _BENCH_NAME_PATTERN.fullmatch(value):
+            raise ValueError(
+                "bench_name may only contain letters, digits, underscores, and hyphens"
+            )
+        return value
+
+    @field_validator("site_name")
+    @classmethod
+    def validate_site_name_restore(cls, value: str) -> str:
+        if not _SITE_NAME_PATTERN.fullmatch(value):
+            raise ValueError("site_name contains invalid characters")
+        return value
+
+    @field_validator("backup_path")
+    @classmethod
+    def validate_backup_path(cls, value: str) -> str:
+        if ".." in value or value.startswith("/"):
+            raise ValueError("backup_path must be a relative path without '..'")
         return value
 
 
@@ -398,8 +475,16 @@ async def _run_init_pipeline(
 
 
 @router.post("/operations/init", response_model=OperationIdResponse)
-async def start_bench_init(request: Request, body: InitOperationRequest) -> OperationIdResponse:
+async def start_bench_init(
+    request: Request,
+    body: InitOperationRequest,
+    server_id: str = Depends(get_server_id),
+) -> OperationIdResponse:
     """Start ``bench init`` (and optional follow-up commands) in the background."""
+    if not is_local(server_id):
+        return await call_remote(
+            server_id, "POST", "/api/operations/init", body=body.model_dump()
+        )
     parent = _resolve_parent_dir_under_scan_root(body.parent_dir)
     target_dir = parent / body.bench_name
     if target_dir.is_dir():
@@ -442,8 +527,13 @@ async def start_bench_init(request: Request, body: InitOperationRequest) -> Oper
 async def start_get_app(
     request: Request,
     body: GetAppOperationRequest,
+    server_id: str = Depends(get_server_id),
 ) -> OperationIdResponse:
     """Run ``bench get-app`` inside a discovered bench directory."""
+    if not is_local(server_id):
+        return await call_remote(
+            server_id, "POST", "/api/operations/get-app", body=body.model_dump()
+        )
     try:
         bench_exe = process.resolve_bench_executable()
     except RuntimeError as exc:
@@ -465,8 +555,13 @@ async def start_get_app(
 async def start_new_site_operation(
     request: Request,
     body: NewSiteOperationRequest,
+    server_id: str = Depends(get_server_id),
 ) -> OperationIdResponse:
     """Run ``bench new-site`` and ``bench install-app`` commands for a bench."""
+    if not is_local(server_id):
+        return await call_remote(
+            server_id, "POST", "/api/operations/new-site", body=body.model_dump()
+        )
     try:
         bench_exe = process.resolve_bench_executable()
     except RuntimeError as exc:
@@ -567,8 +662,13 @@ async def start_new_site_operation(
 async def start_install_app_on_site(
     request: Request,
     body: InstallAppOperationRequest,
+    server_id: str = Depends(get_server_id),
 ) -> OperationIdResponse:
     """Install apps on an existing site, migrate, and restore prior bench run/stop state."""
+    if not is_local(server_id):
+        return await call_remote(
+            server_id, "POST", "/api/operations/install-app", body=body.model_dump()
+        )
     try:
         bench_exe = process.resolve_bench_executable()
     except RuntimeError as exc:
@@ -722,8 +822,137 @@ async def start_install_app_on_site(
     return OperationIdResponse(operation_id=operation_id)
 
 
+@router.post("/operations/bench-update", response_model=OperationIdResponse)
+async def start_bench_update(
+    request: Request,
+    body: BenchUpdateRequest,
+    server_id: str = Depends(get_server_id),
+) -> OperationIdResponse:
+    """Run ``bench update`` inside a discovered bench directory."""
+    if not is_local(server_id):
+        return await call_remote(
+            server_id, "POST", "/api/operations/bench-update", body=body.model_dump()
+        )
+    try:
+        bench_exe = process.resolve_bench_executable()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    bench_path = await _find_bench_path(body.bench_name)
+    operation_id = create_operation_id()
+    ws_manager = request.app.state.ws_manager
+
+    cmd: list[str] = [str(bench_exe), "update"]
+    if body.reset:
+        cmd.append("--reset")
+    if body.no_backup:
+        cmd.append("--no-backup")
+
+    async def _task() -> None:
+        await run_operation(operation_id, cmd, bench_path, ws_manager)
+
+    asyncio.create_task(_task())
+    return OperationIdResponse(operation_id=operation_id)
+
+
+@router.post("/operations/site-backup", response_model=OperationIdResponse)
+async def start_site_backup(
+    request: Request,
+    body: SiteBackupRequest,
+    server_id: str = Depends(get_server_id),
+) -> OperationIdResponse:
+    """Run ``bench --site <site> backup`` for a discovered bench."""
+    if not is_local(server_id):
+        return await call_remote(
+            server_id, "POST", "/api/operations/site-backup", body=body.model_dump()
+        )
+    try:
+        bench_exe = process.resolve_bench_executable()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    bench_path = await _find_bench_path(body.bench_name)
+    site_dir = bench_path / "sites" / body.site_name
+    if not site_dir.is_dir():
+        raise HTTPException(status_code=404, detail=f"Site not found: {body.site_name}")
+
+    operation_id = create_operation_id()
+    ws_manager = request.app.state.ws_manager
+
+    cmd: list[str] = [str(bench_exe), "--site", body.site_name, "backup"]
+    if body.with_files:
+        cmd.append("--with-files")
+
+    async def _task() -> None:
+        await run_operation(operation_id, cmd, bench_path, ws_manager)
+
+    asyncio.create_task(_task())
+    return OperationIdResponse(operation_id=operation_id)
+
+
+@router.post("/operations/site-restore", response_model=OperationIdResponse)
+async def start_site_restore(
+    request: Request,
+    body: SiteRestoreRequest,
+    server_id: str = Depends(get_server_id),
+) -> OperationIdResponse:
+    """Run ``bench --site <site> restore`` for a discovered bench."""
+    if not is_local(server_id):
+        return await call_remote(
+            server_id, "POST", "/api/operations/site-restore", body=body.model_dump()
+        )
+    try:
+        bench_exe = process.resolve_bench_executable()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    bench_path = await _find_bench_path(body.bench_name)
+    site_dir = bench_path / "sites" / body.site_name
+    if not site_dir.is_dir():
+        raise HTTPException(status_code=404, detail=f"Site not found: {body.site_name}")
+
+    backup_file = bench_path / body.backup_path
+    if not backup_file.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Backup file not found: {body.backup_path}",
+        )
+
+    operation_id = create_operation_id()
+    ws_manager = request.app.state.ws_manager
+
+    cmd: list[str] = [
+        str(bench_exe),
+        "--site",
+        body.site_name,
+        "restore",
+        str(backup_file),
+    ]
+
+    async def _task() -> None:
+        await run_operation(
+            operation_id,
+            cmd,
+            bench_path,
+            ws_manager,
+            stdin_input=body.db_root_password,
+        )
+
+    asyncio.create_task(_task())
+    return OperationIdResponse(operation_id=operation_id)
+
+
 async def websocket_operation_logs(websocket: WebSocket, operation_id: str) -> None:
     """Subscribe to log lines for a single operation id."""
+    server_id = websocket.query_params.get("server", "local")
+    if not is_local(server_id):
+        await proxy_websocket(
+            server_id,
+            f"/ws/operations/{operation_id}",
+            websocket,
+        )
+        return
+
     ws_manager = websocket.app.state.ws_manager
     await ws_manager.connect(websocket, operation_id)
     try:

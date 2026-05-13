@@ -20,7 +20,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Subscribes to ``/ws/operations/{operationId}`` and accumulates streamed log lines
  * until a ``done`` or ``error`` message is received.
  */
-export function useOperation(operationId: string | null) {
+export function useOperation(operationId: string | null, serverId?: string) {
   const [lines, setLines] = useState<string[]>([])
   const [status, setStatus] = useState<OperationStatus>("running")
   const [exitCode, setExitCode] = useState<number | null>(null)
@@ -37,7 +37,7 @@ export function useOperation(operationId: string | null) {
     setStatus("running")
     setExitCode(null)
 
-    const url = getOperationsWebSocketUrl(operationId)
+    const url = getOperationsWebSocketUrl(operationId, serverId)
     const socket = new WebSocket(url)
 
     socket.onmessage = (event: MessageEvent<string>) => {
@@ -84,7 +84,7 @@ export function useOperation(operationId: string | null) {
         socket.close()
       }
     }
-  }, [operationId])
+  }, [operationId, serverId])
 
   return { lines, status, exitCode }
 }

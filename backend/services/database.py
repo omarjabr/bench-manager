@@ -1,9 +1,16 @@
-"""MariaDB connection helpers for the Database Explorer (PyMySQL, one connection per operation)."""
+"""MariaDB connection helpers for the Database Explorer (PyMySQL, one connection per operation).
+
+Both the global Database Explorer and the per-site Database tab share the query
+logic in this module.  Functions that hit MariaDB accept an optional
+``ConnectionParams``; when omitted they fall back to the global credentials
+(``~/.my.cnf`` → Settings).
+"""
 
 from __future__ import annotations
 
 import configparser
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +36,16 @@ _FORBIDDEN_QUERY_PREFIXES = (
 )
 
 
+@dataclass(frozen=True)
+class ConnectionParams:
+    """Explicit MariaDB connection credentials (used by per-site DB)."""
+
+    host: str
+    user: str
+    password: str
+    port: int = 3306
+
+
 def _fallback_from_settings(settings: Settings) -> dict[str, Any]:
     """Build connection params from persisted app settings."""
     host = str(settings.db_host) if settings.db_host else "127.0.0.1"
@@ -42,7 +59,7 @@ def _fallback_from_settings(settings: Settings) -> dict[str, Any]:
 
 def get_connection_params() -> dict[str, Any]:
     """
-    Resolve MariaDB connection parameters.
+    Resolve global MariaDB connection parameters.
 
     Reads ``~/.my.cnf`` ``[client]`` when present; otherwise uses :class:`Settings`.
     Host defaults to 127.0.0.1 when not set in ``[client]``.
@@ -77,7 +94,19 @@ def get_connection_params() -> dict[str, Any]:
     return {"host": host, "user": user, "password": password, "port": 3306}
 
 
-def _connect() -> pymysql.connections.Connection:
+def _connect(
+    conn_params: ConnectionParams | None = None,
+) -> pymysql.connections.Connection:
+    """Open a PyMySQL connection using explicit *conn_params* or global creds."""
+    if conn_params is not None:
+        return pymysql.connect(
+            host=conn_params.host,
+            user=conn_params.user,
+            password=conn_params.password,
+            port=conn_params.port,
+            charset="utf8mb4",
+            cursorclass=pymysql.cursors.Cursor,
+        )
     params = get_connection_params()
     return pymysql.connect(
         host=params["host"],
@@ -99,10 +128,12 @@ def _json_safe(value: object) -> object:
     return value
 
 
-def test_connection() -> bool:
+def test_connection(
+    conn_params: ConnectionParams | None = None,
+) -> bool:
     """Return True if ``SELECT 1`` succeeds against the configured server."""
     try:
-        conn = _connect()
+        conn = _connect(conn_params)
         try:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
@@ -114,9 +145,11 @@ def test_connection() -> bool:
     return True
 
 
-def list_databases() -> list[str]:
+def list_databases(
+    conn_params: ConnectionParams | None = None,
+) -> list[str]:
     """Return user database names (system schemas excluded)."""
-    conn = _connect()
+    conn = _connect(conn_params)
     try:
         with conn.cursor() as cur:
             cur.execute("SHOW DATABASES")
@@ -133,9 +166,12 @@ def list_databases() -> list[str]:
     return sorted(names)
 
 
-def list_tables(db_name: str) -> list[str]:
+def list_tables(
+    db_name: str,
+    conn_params: ConnectionParams | None = None,
+) -> list[str]:
     """Return table names in ``db_name``."""
-    conn = _connect()
+    conn = _connect(conn_params)
     try:
         with conn.cursor() as cur:
             cur.execute(f"SHOW TABLES FROM `{db_name}`")
@@ -151,9 +187,13 @@ def list_tables(db_name: str) -> list[str]:
     return sorted(out)
 
 
-def get_table_columns(db_name: str, table_name: str) -> list[dict[str, Any]]:
+def get_table_columns(
+    db_name: str,
+    table_name: str,
+    conn_params: ConnectionParams | None = None,
+) -> list[dict[str, Any]]:
     """Column metadata from ``DESCRIBE``."""
-    conn = _connect()
+    conn = _connect(conn_params)
     try:
         with conn.cursor() as cur:
             cur.execute(f"DESCRIBE `{db_name}`.`{table_name}`")
@@ -192,12 +232,13 @@ def get_table_rows(
     table_name: str,
     page: int,
     page_size: int = 25,
+    conn_params: ConnectionParams | None = None,
 ) -> dict[str, Any]:
     """Paginated ``SELECT *`` with total row count."""
     if page < 1:
         page = 1
     offset = (page - 1) * page_size
-    conn = _connect()
+    conn = _connect(conn_params)
     try:
         with conn.cursor() as cur:
             count_sql = f"SELECT COUNT(*) FROM `{db_name}`.`{table_name}`"
@@ -236,13 +277,14 @@ def update_cell(
     primary_key_val: str,
     column: str,
     value: str,
+    conn_params: ConnectionParams | None = None,
 ) -> None:
     """Update a single cell using a parameterized ``UPDATE``."""
-    meta = get_table_columns(db_name, table_name)
+    meta = get_table_columns(db_name, table_name, conn_params=conn_params)
     valid_names = {c["name"] for c in meta}
     if primary_key_col not in valid_names or column not in valid_names:
         raise ValueError("Invalid column name for this table.")
-    conn = _connect()
+    conn = _connect(conn_params)
     try:
         with conn.cursor() as cur:
             sql = (
@@ -260,13 +302,14 @@ def delete_row(
     table_name: str,
     primary_key_col: str,
     primary_key_val: str,
+    conn_params: ConnectionParams | None = None,
 ) -> None:
     """Delete a row by primary key."""
-    meta = get_table_columns(db_name, table_name)
+    meta = get_table_columns(db_name, table_name, conn_params=conn_params)
     valid_names = {c["name"] for c in meta}
     if primary_key_col not in valid_names:
         raise ValueError("Invalid primary key column for this table.")
-    conn = _connect()
+    conn = _connect(conn_params)
     try:
         with conn.cursor() as cur:
             sql = f"DELETE FROM `{db_name}`.`{table_name}` WHERE `{primary_key_col}` = %s"
@@ -286,14 +329,18 @@ def _assert_read_only_sql(sql: str) -> None:
             raise ValueError("Only SELECT statements are allowed in the query runner")
 
 
-def run_query(db_name: str, sql: str) -> dict[str, Any]:
+def run_query(
+    db_name: str,
+    sql: str,
+    conn_params: ConnectionParams | None = None,
+) -> dict[str, Any]:
     """
     Execute read-only SQL in ``db_name``.
 
     Results larger than 500 rows are truncated; ``total`` is the full count.
     """
     _assert_read_only_sql(sql)
-    conn = _connect()
+    conn = _connect(conn_params)
     try:
         with conn.cursor() as cur:
             cur.execute(f"USE `{db_name}`")

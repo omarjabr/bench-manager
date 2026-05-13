@@ -1,4 +1,5 @@
 import {
+  ArrowUp01Icon,
   ChipIcon,
   ComputerTerminal01Icon,
   DashboardSquare01Icon,
@@ -20,10 +21,15 @@ import { toast } from "sonner"
 
 import { AppList } from "@/components/bench/AppList"
 import { BenchStatus } from "@/components/bench/BenchStatus"
+import { FileExplorer } from "@/components/bench/FileExplorer"
+import { SiteConfigEditor } from "@/components/bench/SiteConfigEditor"
+import { SiteDatabasePanel } from "@/components/bench/SiteDatabasePanel"
 import { SiteList } from "@/components/bench/SiteList"
+import { SiteLogsPanel } from "@/components/bench/SiteLogsPanel"
 import { LogStream } from "@/components/shared/LogStream"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -50,6 +56,7 @@ import { useBench } from "@/hooks/useBench"
 import { useOperation } from "@/hooks/useOperation"
 import {
   getApiErrorMessage,
+  postOperationBenchUpdate,
   postOperationGetApp,
   restartBench,
   startBench,
@@ -106,6 +113,7 @@ export default function BenchDetail() {
 
   const { data, isLoading, isError, error, refetch } = useBench(benchName)
 
+  const serverId = useUiStore((s) => s.currentServerId)
   const activeOperationId = useUiStore((s) => s.activeOperationId)
   const activeBenchName = useUiStore((s) => s.activeBenchName)
   const setActiveOperationId = useUiStore((s) => s.setActiveOperationId)
@@ -127,8 +135,8 @@ export default function BenchDetail() {
     }
     setActiveOperationId(null)
     setActiveBenchStore(null)
-    void queryClient.invalidateQueries({ queryKey: ["benches"] })
-    void queryClient.invalidateQueries({ queryKey: ["bench", benchName] })
+    void queryClient.invalidateQueries({ queryKey: ["benches", serverId] })
+    void queryClient.invalidateQueries({ queryKey: ["bench", benchName, serverId] })
   }, [
     showInitLog,
     initOperation.status,
@@ -158,9 +166,9 @@ export default function BenchDetail() {
     }
     setControl("start")
     try {
-      await startBench(benchName)
-      await queryClient.invalidateQueries({ queryKey: ["bench", benchName] })
-      await queryClient.invalidateQueries({ queryKey: ["benches"] })
+      await startBench(benchName, serverId)
+      await queryClient.invalidateQueries({ queryKey: ["bench", benchName, serverId] })
+      await queryClient.invalidateQueries({ queryKey: ["benches", serverId] })
     } catch (err) {
       toast.error(getApiErrorMessage(err))
     } finally {
@@ -174,9 +182,9 @@ export default function BenchDetail() {
     }
     setControl("stop")
     try {
-      await stopBench(benchName)
-      await queryClient.invalidateQueries({ queryKey: ["bench", benchName] })
-      await queryClient.invalidateQueries({ queryKey: ["benches"] })
+      await stopBench(benchName, serverId)
+      await queryClient.invalidateQueries({ queryKey: ["bench", benchName, serverId] })
+      await queryClient.invalidateQueries({ queryKey: ["benches", serverId] })
     } catch (err) {
       toast.error(getApiErrorMessage(err))
     } finally {
@@ -230,7 +238,7 @@ export default function BenchDetail() {
       ) {
         payload.branch = parsed.data.branch
       }
-      const res = await postOperationGetApp(payload)
+      const res = await postOperationGetApp(payload, serverId)
       setGetAppOperationId(res.operation_id)
     } catch (err) {
       toast.error(getApiErrorMessage(err))
@@ -247,8 +255,8 @@ export default function BenchDetail() {
         return
       }
       getAppToastOpRef.current = getAppOperationId
-      void queryClient.invalidateQueries({ queryKey: ["bench", benchName] })
-      void queryClient.invalidateQueries({ queryKey: ["benches"] })
+      void queryClient.invalidateQueries({ queryKey: ["bench", benchName, serverId] })
+      void queryClient.invalidateQueries({ queryKey: ["benches", serverId] })
       toast.success(
         "App fetched successfully. To install it on a site, use the Install App button on the Sites tab."
       )
@@ -261,15 +269,62 @@ export default function BenchDetail() {
     benchName,
   ])
 
+  const [updateOpen, setUpdateOpen] = useState(false)
+  const [updateReset, setUpdateReset] = useState(false)
+  const [updateNoBackup, setUpdateNoBackup] = useState(false)
+  const [updateOperationId, setUpdateOperationId] = useState<string | null>(null)
+  const updateStream = useOperation(updateOperationId)
+  const updateToastRef = useRef<string | null>(null)
+
+  const handleUpdateOpenChange = (next: boolean) => {
+    if (!next && updateOperationId !== null && updateStream.status === "running") {
+      return
+    }
+    if (!next) {
+      setUpdateReset(false)
+      setUpdateNoBackup(false)
+      setUpdateOperationId(null)
+      updateToastRef.current = null
+    }
+    setUpdateOpen(next)
+  }
+
+  const handleUpdateSubmit = async () => {
+    try {
+      const res = await postOperationBenchUpdate({
+        bench_name: benchName,
+        reset: updateReset,
+        no_backup: updateNoBackup,
+      }, serverId)
+      setUpdateOperationId(res.operation_id)
+    } catch (err) {
+      toast.error(getApiErrorMessage(err))
+    }
+  }
+
+  useEffect(() => {
+    if (
+      updateStream.status === "done" &&
+      updateStream.exitCode === 0 &&
+      updateOperationId !== null
+    ) {
+      if (updateToastRef.current === updateOperationId) return
+      updateToastRef.current = updateOperationId
+      void queryClient.invalidateQueries({ queryKey: ["bench", benchName, serverId] })
+      void queryClient.invalidateQueries({ queryKey: ["benches", serverId] })
+      toast.success("Bench updated successfully")
+    }
+  }, [updateStream.status, updateStream.exitCode, updateOperationId, queryClient, benchName])
+
   const handleRestart = async () => {
     if (benchName.length === 0) {
       return
     }
     setControl("restart")
     try {
-      await restartBench(benchName)
-      await queryClient.invalidateQueries({ queryKey: ["bench", benchName] })
-      await queryClient.invalidateQueries({ queryKey: ["benches"] })
+      await restartBench(benchName, serverId)
+      await queryClient.invalidateQueries({ queryKey: ["bench", benchName, serverId] })
+      await queryClient.invalidateQueries({ queryKey: ["benches", serverId] })
     } catch (err) {
       toast.error(getApiErrorMessage(err))
     } finally {
@@ -386,6 +441,16 @@ export default function BenchDetail() {
                 <HugeiconsIcon icon={RefreshIcon} className="size-4" />
               )}
               Restart
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => setUpdateOpen(true)}
+            >
+              <HugeiconsIcon icon={ArrowUp01Icon} className="size-4" />
+              Update
             </Button>
           </div>
         </div>
@@ -552,6 +617,8 @@ export default function BenchDetail() {
                 exitCode={initOperation.exitCode}
               />
             </div>
+          ) : data ? (
+            <SiteLogsPanel benchName={data.name} sites={data.sites} />
           ) : (
             <p className="text-sm text-muted-foreground">
               No active operation. Logs will appear here during bench init or
@@ -600,34 +667,13 @@ export default function BenchDetail() {
           {isLoading && !showInitLog ? (
             <TabPanelSkeleton />
           ) : data ? (
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <h3 className="text-sm font-medium">Files</h3>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>File</TableHead>
-                      <TableHead>Size</TableHead>
-                      <TableHead>Last modified</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <TableRow>
-                      <TableCell className="font-medium">bench</TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {data.pid !== null ? String(data.pid) : "—"}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {data.pid !== null ? String(data.pid) : "—"}
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
+            <FileExplorer benchName={data.name} />
           ) : null}
         </TabsContent>
-        <TabsContent value="database" className="mt-4">
+        <TabsContent
+          value="database"
+          className="mt-4 flex min-h-[500px] flex-col"
+        >
           {showInitLog && !data ? (
             <p className="text-sm text-muted-foreground">
               Database will appear here after the bench is ready.
@@ -636,27 +682,10 @@ export default function BenchDetail() {
           {isLoading && !showInitLog ? (
             <TabPanelSkeleton />
           ) : data ? (
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <h3 className="text-sm font-medium">Database</h3>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Database</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <TableRow>
-                      <TableCell className="font-medium">bench</TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {data.pid !== null ? String(data.pid) : "—"}
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
+            <SiteDatabasePanel
+              benchName={data.name}
+              sites={data.sites}
+            />
           ) : null}
         </TabsContent>
         <TabsContent value="settings" className="mt-4">
@@ -668,27 +697,7 @@ export default function BenchDetail() {
           {isLoading && !showInitLog ? (
             <TabPanelSkeleton />
           ) : data ? (
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <h3 className="text-sm font-medium">Settings</h3>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Setting</TableHead>
-                      <TableHead>Value</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <TableRow>
-                      <TableCell className="font-medium">bench</TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {data.pid !== null ? String(data.pid) : "—"}
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
+            <SiteConfigEditor benchName={data.name} sites={data.sites} />
           ) : null}
         </TabsContent>
       </Tabs>
@@ -777,6 +786,87 @@ export default function BenchDetail() {
                     type="button"
                     variant="outline"
                     onClick={() => handleGetAppOpenChange(false)}
+                  >
+                    Close
+                  </Button>
+                </DialogFooter>
+              ) : null}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Bench Update dialog */}
+      <Dialog open={updateOpen} onOpenChange={handleUpdateOpenChange}>
+        <DialogContent
+          className="sm:max-w-lg"
+          showCloseButton={
+            !(updateOperationId !== null && updateStream.status === "running")
+          }
+          onPointerDownOutside={(event) => {
+            if (updateOperationId !== null && updateStream.status === "running") {
+              event.preventDefault()
+            }
+          }}
+          onEscapeKeyDown={(event) => {
+            if (updateOperationId !== null && updateStream.status === "running") {
+              event.preventDefault()
+            }
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Update bench</DialogTitle>
+            <DialogDescription>
+              Run{" "}
+              <span className="font-mono text-xs">bench update</span> to pull
+              the latest changes for all apps and run migrations.
+            </DialogDescription>
+          </DialogHeader>
+          {updateOperationId === null ? (
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="update-reset"
+                  checked={updateReset}
+                  onCheckedChange={(c) => setUpdateReset(c === true)}
+                />
+                <Label htmlFor="update-reset" className="cursor-pointer">
+                  Hard reset git repos before update (--reset)
+                </Label>
+              </div>
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="update-no-backup"
+                  checked={updateNoBackup}
+                  onCheckedChange={(c) => setUpdateNoBackup(c === true)}
+                />
+                <Label htmlFor="update-no-backup" className="cursor-pointer">
+                  Skip pre-update backup (--no-backup)
+                </Label>
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  onClick={() => void handleUpdateSubmit()}
+                >
+                  Start Update
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <LogStream
+                operationId={updateOperationId}
+                lines={updateStream.lines}
+                status={updateStream.status}
+                exitCode={updateStream.exitCode}
+              />
+              {updateStream.status !== "running" ? (
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleUpdateOpenChange(false)}
                   >
                     Close
                   </Button>

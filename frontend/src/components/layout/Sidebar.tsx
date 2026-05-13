@@ -1,4 +1,6 @@
 import {
+  ArrowDown01Icon,
+  CloudServerIcon,
   DatabaseIcon,
   Home01Icon,
   Layout01Icon,
@@ -8,9 +10,14 @@ import {
   Sun01Icon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { NavLink } from "react-router-dom"
+import { NavLink, useNavigate } from "react-router-dom"
 
 import { Button } from "@/components/ui/button"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { Sheet, SheetContent } from "@/components/ui/sheet"
 import {
   Tooltip,
@@ -20,8 +27,11 @@ import {
 } from "@/components/ui/tooltip"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useBenchSocket } from "@/hooks/useBenchSocket"
+import { useServers } from "@/hooks/useServers"
+import type { ServerRecord } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { useUiStore } from "@/stores/ui.store"
+import { useState } from "react"
 
 const navLinkClass = ({
   isActive,
@@ -45,14 +55,192 @@ type NavItemDef = {
   label: string
   icon: typeof Home01Icon
   end?: boolean
+  localOnly?: boolean
 }
 
 const NAV_ITEMS: NavItemDef[] = [
   { to: "/", label: "Dashboard", icon: Home01Icon, end: true },
   { to: "/templates", label: "Templates", icon: Layout01Icon },
   { to: "/database", label: "Database", icon: DatabaseIcon },
+  { to: "/system-check", label: "System Check", icon: Settings02Icon, localOnly: true },
+  { to: "/servers", label: "Servers", icon: CloudServerIcon },
   { to: "/settings", label: "Settings", icon: Settings02Icon },
 ]
+
+function ServerSelector({
+  collapsed,
+  onNavigate,
+}: {
+  collapsed: boolean
+  onNavigate?: () => void
+}) {
+  const { data: servers } = useServers()
+  const currentServerId = useUiStore((s) => s.currentServerId)
+  const setCurrentServerId = useUiStore((s) => s.setCurrentServerId)
+  const navigate = useNavigate()
+  const [open, setOpen] = useState(false)
+
+  const activeServer = servers?.find((s) => s.id === currentServerId) ?? null
+  const displayName = activeServer?.nickname ?? "Local"
+  const initial = displayName.charAt(0).toUpperCase()
+
+  const statusColor = (server: ServerRecord) => {
+    switch (server.status) {
+      case "connected":
+        return "bg-emerald-500"
+      case "connecting":
+        return "animate-pulse-dot bg-amber-400"
+      case "error":
+        return "bg-destructive"
+      default:
+        return "bg-muted-foreground/40"
+    }
+  }
+
+  const handleSelect = (serverId: string) => {
+    setCurrentServerId(serverId)
+    setOpen(false)
+  }
+
+  const handleManageServers = () => {
+    setOpen(false)
+    onNavigate?.()
+    navigate("/servers")
+  }
+
+  if (collapsed) {
+    return (
+      <Popover open={open} onOpenChange={setOpen}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  "flex size-10 items-center justify-center rounded-md text-xs font-bold transition-colors",
+                  "bg-sidebar-accent/80 text-sidebar-accent-foreground",
+                  "hover:bg-sidebar-accent",
+                )}
+              >
+                {initial}
+              </button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="right">{displayName}</TooltipContent>
+        </Tooltip>
+        <PopoverContent side="right" align="start" className="w-56 p-1">
+          <ServerDropdownItems
+            servers={servers ?? []}
+            currentServerId={currentServerId}
+            statusColor={statusColor}
+            onSelect={handleSelect}
+            onManage={handleManageServers}
+          />
+        </PopoverContent>
+      </Popover>
+    )
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
+            "hover:bg-sidebar-accent/60",
+          )}
+        >
+          <span
+            className={cn(
+              "flex size-7 shrink-0 items-center justify-center rounded-md text-[11px] font-bold",
+              "bg-sidebar-accent/80 text-sidebar-accent-foreground",
+            )}
+          >
+            {initial}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-left font-medium text-sidebar-foreground">
+            {displayName}
+          </span>
+          <HugeiconsIcon
+            icon={ArrowDown01Icon}
+            className="size-3.5 shrink-0 text-sidebar-foreground/60"
+          />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="bottom" align="start" className="w-(--radix-popover-trigger-width) p-1">
+        <ServerDropdownItems
+          servers={servers ?? []}
+          currentServerId={currentServerId}
+          statusColor={statusColor}
+          onSelect={handleSelect}
+          onManage={handleManageServers}
+        />
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function ServerDropdownItems({
+  servers,
+  currentServerId,
+  statusColor,
+  onSelect,
+  onManage,
+}: {
+  servers: ServerRecord[]
+  currentServerId: string
+  statusColor: (server: ServerRecord) => string
+  onSelect: (id: string) => void
+  onManage: () => void
+}) {
+  return (
+    <div className="flex flex-col">
+      {servers.map((server) => {
+        const selectable = server.status === "connected"
+
+        return (
+          <button
+            key={server.id}
+            type="button"
+            disabled={!selectable}
+            onClick={() => onSelect(server.id)}
+            className={cn(
+              "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
+              !selectable && "cursor-not-allowed opacity-50",
+              server.id === currentServerId
+                ? "bg-accent text-accent-foreground"
+                : selectable
+                  ? "text-popover-foreground hover:bg-accent/60"
+                  : "text-popover-foreground",
+            )}
+          >
+            <span
+              className={cn(
+                "inline-block size-2 shrink-0 rounded-full",
+                statusColor(server),
+              )}
+              aria-hidden
+            />
+            <span className="min-w-0 flex-1 truncate text-left">{server.nickname}</span>
+            {server.id === currentServerId && (
+              <span className="sr-only">(selected)</span>
+            )}
+          </button>
+        )
+      })}
+      <div className="my-1 border-t border-border" />
+      <button
+        type="button"
+        onClick={onManage}
+        className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-accent-foreground"
+      >
+        <HugeiconsIcon icon={Settings02Icon} className="size-3.5 shrink-0" />
+        <span>Manage servers…</span>
+      </button>
+    </div>
+  )
+}
 
 function SidebarNav({
   collapsed,
@@ -67,6 +255,7 @@ function SidebarNav({
 }) {
   const theme = useUiStore((s) => s.theme)
   const setTheme = useUiStore((s) => s.setTheme)
+  const currentServerId = useUiStore((s) => s.currentServerId)
 
   const nextTheme = theme === "dark" ? "light" : "dark"
 
@@ -111,6 +300,16 @@ function SidebarNav({
             )}
           </Tooltip>
         </div>
+
+        <div
+          className={cn(
+            "shrink-0 border-b border-sidebar-border p-2",
+            collapsed && "flex justify-center",
+          )}
+        >
+          <ServerSelector collapsed={collapsed} onNavigate={onNavigate} />
+        </div>
+
         <nav
           className={cn(
             "flex flex-1 flex-col gap-1 p-2",
@@ -118,6 +317,32 @@ function SidebarNav({
           )}
         >
           {NAV_ITEMS.map((item) => {
+            const disabled = item.localOnly === true && currentServerId !== "local"
+            if (disabled) {
+              const disabledNode = (
+                <span
+                  key={item.to}
+                  className={cn(
+                    navLinkClass({ isActive: false, collapsed }),
+                    "cursor-not-allowed opacity-50",
+                  )}
+                >
+                  <HugeiconsIcon
+                    icon={item.icon}
+                    className={cn("shrink-0", collapsed ? "size-5" : "size-4")}
+                  />
+                  {!collapsed && <span>{item.label}</span>}
+                </span>
+              )
+              return (
+                <Tooltip key={item.to}>
+                  <TooltipTrigger asChild>{disabledNode}</TooltipTrigger>
+                  <TooltipContent side="right">
+                    Available only on the Local server
+                  </TooltipContent>
+                </Tooltip>
+              )
+            }
             const link = (
               <NavLink
                 key={item.to}

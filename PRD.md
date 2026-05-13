@@ -1,9 +1,9 @@
 # Bench Manager — Product Requirements Document
 
-**Version:** 1.0  
-**Phase:** V1 — Local Bench Management  
-**Status:** V1 Complete  
-**Tagged:** `v1.0.0`
+**Version:** 2.0  
+**Phase:** V2 — Remote Server + Per-Site Database  
+**Status:** In progress  
+**Tagged:** `v1.0.0` (V1)
 
 ---
 
@@ -27,11 +27,11 @@ Frappe/ERPNext developers managing multiple bench installations face a repetitiv
 
 ### 1.4 Non-Goals (V1)
 
-- Remote server management (planned V2)
+- ~~Remote server management~~ → **V2 scope**
 - Multi-user access or authentication
 - Production deployment management (supervisor, nginx config)
 - ERPNext data management (doctypes, reports, etc.)
-- Bench backup or restore operations
+- ~~Bench backup or restore operations~~ → **V2 scope**
 
 ---
 
@@ -382,6 +382,35 @@ CREATE TABLE app_registry (
 | `PUT`    | `/api/settings`                          | Update settings                           |
 | `POST`   | `/api/operations/init`                   | Start bench init (returns operation_id)   |
 | `POST`   | `/api/operations/get-app`                | Get app into bench (returns operation_id) |
+| `GET`    | `/api/database/status`                   | MariaDB connection probe (V1)             |
+| `GET`    | `/api/database/databases`                | List non-system databases (V1)            |
+| `GET`    | `/api/database/{db}/tables`              | List tables in a database (V1)            |
+| `GET`    | `/api/database/{db}/{table}/columns`     | Column metadata (V1)                      |
+| `GET`    | `/api/database/{db}/{table}/rows`        | Paginated rows (V1)                       |
+| `PATCH`  | `/api/database/{db}/{table}/rows`        | Update a cell (V1)                        |
+| `DELETE` | `/api/database/{db}/{table}/rows`        | Delete a row (V1)                         |
+| `POST`   | `/api/database/{db}/query`               | Read-only SQL runner (V1)                 |
+| `GET`    | `/api/benches/{b}/sites/{s}/database/status`  | Site DB connection probe (V2)        |
+| `GET`    | `/api/benches/{b}/sites/{s}/database/tables`  | Tables in site DB (V2)               |
+| `GET`    | `/api/benches/{b}/sites/{s}/database/{t}/columns` | Column metadata (V2)            |
+| `GET`    | `/api/benches/{b}/sites/{s}/database/{t}/rows`    | Paginated rows (V2)             |
+| `PATCH`  | `/api/benches/{b}/sites/{s}/database/{t}/rows`    | Update a cell (V2)              |
+| `DELETE` | `/api/benches/{b}/sites/{s}/database/{t}/rows`    | Delete a row (V2)               |
+| `POST`   | `/api/benches/{b}/sites/{s}/database/query`        | Read-only SQL runner (V2)       |
+| `GET`    | `/api/benches/{b}/sites/{s}/config`      | Site config (editable + readonly) (V2)    |
+| `PUT`    | `/api/benches/{b}/sites/{s}/config`      | Update editable config keys (V2)          |
+| `GET`    | `/api/benches/{b}/sites/{s}/logs`        | List log files for site (V2)              |
+| `GET`    | `/api/benches/{b}/sites/{s}/logs/{file}` | Tail log file (V2)                        |
+| `POST`   | `/api/operations/bench-update`           | Run bench update (V2)                     |
+| `POST`   | `/api/operations/site-backup`            | Backup site (V2)                          |
+| `POST`   | `/api/operations/site-restore`           | Restore site (V2)                         |
+| `GET`    | `/api/servers`                           | List servers (V2)                         |
+| `POST`   | `/api/servers`                           | Register a server (V2)                    |
+| `PUT`    | `/api/servers/{id}`                      | Update a server (V2)                      |
+| `DELETE` | `/api/servers/{id}`                      | Remove a server (V2)                      |
+| `POST`   | `/api/servers/{id}/connect`              | Open SSH tunnel (V2)                      |
+| `POST`   | `/api/servers/{id}/disconnect`           | Close SSH tunnel (V2)                     |
+| `POST`   | `/api/servers/{id}/deploy`               | Deploy agent to server (V2)               |
 
 
 ### WebSocket
@@ -391,6 +420,7 @@ CREATE TABLE app_registry (
 | -------------------------------------------------- | -------------------------------------------------- |
 | `ws://localhost:8000/ws/operations/{operation_id}` | Stream stdout/stderr for a running operation       |
 | `ws://localhost:8000/ws/benches`                   | Real-time bench status updates (start/stop events) |
+| `ws://localhost:8000/ws/benches/{b}/sites/{s}/logs/{file}` | Live `tail -F` log stream for a site (V2)  |
 
 
 ---
@@ -426,17 +456,27 @@ bench-manager/
 │   ├── database.py              # SQLite + SQLModel setup
 │   ├── models/
 │   │   ├── bench.py             # Pydantic models for bench/site/app
-│   │   └── template.py          # Template ORM model
+│   │   ├── template.py          # Template ORM model
+│   │   └── server.py            # Server registry SQLModel (V2)
 │   ├── routes/
 │   │   ├── benches.py           # Bench discovery + control routes
+│   │   ├── database.py          # Global Database Explorer (V1)
+│   │   ├── site_database.py     # Per-site Database Explorer (V2)
 │   │   ├── sites.py             # Site management routes
 │   │   ├── templates.py         # Template CRUD routes
 │   │   ├── operations.py        # Long-running operation routes
-│   │   └── settings.py          # Settings routes
+│   │   ├── settings.py          # Settings routes
+│   │   ├── logs.py              # Per-site log viewer (V2)
+│   │   ├── site_config.py       # Site config editor (V2)
+│   │   └── servers.py           # Server CRUD + tunnel control (V2)
 │   ├── services/
+│   │   ├── database.py          # MariaDB query logic (accepts ConnectionParams)
+│   │   ├── site_db.py           # Site DB credential reader (V2)
 │   │   ├── discovery.py         # Filesystem scanning logic
 │   │   ├── process.py           # psutil process management
-│   │   └── executor.py          # asyncio subprocess + WebSocket streaming
+│   │   ├── executor.py          # asyncio subprocess + WebSocket streaming
+│   │   ├── remote.py            # SSH tunnel + agent deploy (V2)
+│   │   └── dispatcher.py        # Local/remote request routing (V2)
 │   └── ws/
 │       └── manager.py           # WebSocket connection manager
 │
@@ -450,18 +490,24 @@ bench-manager/
         ├── lib/
         │   ├── api.ts           # Axios instance + typed API calls
         │   ├── ws.ts            # WebSocket client helpers
+        │   ├── databaseDisplay.ts # Cell formatting helpers
         │   └── utils.ts
         ├── stores/
-        │   └── ui.store.ts      # Zustand: sidebar state, active bench, etc.
+        │   └── ui.store.ts      # Zustand: sidebar state, active bench, server
         ├── hooks/
         │   ├── useBenches.ts    # React Query hooks
         │   ├── useBench.ts
-        │   └── useOperation.ts  # WebSocket-backed operation state
+        │   ├── useDatabase.ts   # Global Database Explorer hooks
+        │   ├── useSiteDatabase.ts # Per-site Database hooks (V2)
+        │   ├── useOperation.ts  # WebSocket-backed operation state
+        │   └── useServers.ts    # Server registry hooks (V2)
         ├── pages/
         │   ├── Dashboard.tsx
         │   ├── BenchDetail.tsx
+        │   ├── Database.tsx
         │   ├── Templates.tsx
-        │   └── Settings.tsx
+        │   ├── Settings.tsx
+        │   └── Servers.tsx      # Server management page (V2)
         ├── components/
         │   ├── layout/
         │   │   ├── Sidebar.tsx
@@ -470,7 +516,13 @@ bench-manager/
         │   │   ├── BenchCard.tsx
         │   │   ├── BenchStatus.tsx
         │   │   ├── SiteList.tsx
-        │   │   └── AppList.tsx
+        │   │   ├── AppList.tsx
+        │   │   └── SiteDatabasePanel.tsx  # Per-site DB tab (V2)
+        │   ├── database/
+        │   │   ├── DatabaseExplorerSidebar.tsx
+        │   │   ├── DatabaseDataGrid.tsx   # Accepts apiScope prop
+        │   │   ├── DatabaseSqlRunner.tsx   # Accepts apiScope prop
+        │   │   └── TruncatedCell.tsx
         │   ├── wizards/
         │   │   ├── NewBenchWizard.tsx
         │   │   └── NewSiteForm.tsx
@@ -483,39 +535,55 @@ bench-manager/
         └── schemas/
             ├── bench.schema.ts      # Zod schemas
             ├── site.schema.ts
+            ├── server.schema.ts     # V2
+            ├── siteConfig.schema.ts # V2
             └── template.schema.ts
 ```
 
 ---
 
-## 10. V2 Preview — Remote Server Management
+## 10. V2 Architecture — Remote Server Management
 
-V2 will extend Bench Manager with the ability to connect to and manage benches on remote cloud servers. The core addition is a **Server Registry** and a **remote FastAPI agent** that runs on each remote server.
+The local backend acts as a **controller** that proxies to remote agents:
 
-The same FastAPI backend codebase will be deployed as a lightweight agent on remote servers. The local backend will SSH-tunnel into the remote agent and proxy requests from the frontend. From the UI perspective, remote benches will look identical to local ones, distinguished only by a server label in the sidebar.
+```
+Browser ──HTTP+WS──▶ Local Backend
+                          │
+                 ┌────────┼────────┐
+                 │        │        │
+              direct   SSH tunnel  SSH tunnel
+                 │        │        │
+           Local FS    Agent 1   Agent 2
+                      (prod)    (staging)
+```
 
-V2 scope includes:
+Every existing route is wrapped by a `server_id` dispatcher:
 
-- Server registry (nickname, host, SSH user, key path)
-- One-click remote agent deployment
-- SSH tunnel management (on-demand, with keepalive)
-- Read-only mode for production servers
-- Unified sidebar: local + remote benches in one tree
+- `server_id == "local"` → runs in-process as today.
+- Any other `server_id` → forwarded to the matching remote agent over the local tunnel via an HTTP client, WebSocket frames relayed both ways for `/ws/operations/*`.
+
+The same FastAPI backend codebase is deployed as a lightweight agent on remote servers. The local backend SSH-tunnels into the remote agent and proxies requests from the frontend. From the UI perspective, remote benches look identical to local ones, distinguished only by a server label.
 
 ---
 
-## 11. V1 Milestones
+## 11. Milestones
 
 
-| Milestone                       | Scope                                                                                       | Status |
-| ------------------------------- | ------------------------------------------------------------------------------------------- | ------ |
-| **M1 — Backend foundation**     | FastAPI setup, bench discovery, REST API for benches/sites/apps, SQLite init                | Done   |
-| **M2 — Frontend scaffold**      | Vite + React + Tailwind + shadcn setup, routing, sidebar layout, dashboard with static data | Done   |
-| **M3 — Live dashboard**         | React Query integration, real bench data on dashboard, bench detail view                    | Done   |
-| **M4 — Process control**        | Start/stop benches, status polling, WebSocket bench status updates                          | Done   |
-| **M5 — Operations + streaming** | New Bench Wizard, New Site form, WebSocket log streaming via xterm.js                       | Done   |
-| **M6 — Templates**              | Template CRUD, "Use Template" in wizard, "Save as Template" shortcut                        | Done   |
-| **M7 — Settings + polish**      | Settings page, scan config, common apps registry, UI polish pass                            | Done   |
+| Milestone                            | Scope                                                                                       | Status      |
+| ------------------------------------ | ------------------------------------------------------------------------------------------- | ----------- |
+| **M1 — Backend foundation**          | FastAPI setup, bench discovery, REST API for benches/sites/apps, SQLite init                | Done        |
+| **M2 — Frontend scaffold**           | Vite + React + Tailwind + shadcn setup, routing, sidebar layout, dashboard with static data | Done        |
+| **M3 — Live dashboard**              | React Query integration, real bench data on dashboard, bench detail view                    | Done        |
+| **M4 — Process control**             | Start/stop benches, status polling, WebSocket bench status updates                          | Done        |
+| **M5 — Operations + streaming**      | New Bench Wizard, New Site form, WebSocket log streaming via xterm.js                       | Done        |
+| **M6 — Templates**                   | Template CRUD, "Use Template" in wizard, "Save as Template" shortcut                        | Done        |
+| **M7 — Settings + polish**           | Settings page, scan config, common apps registry, UI polish pass                            | Done        |
+| **M8 — Database refactor**           | Refactor global Database Explorer to accept `ConnectionParams`/`apiScope` for code sharing  | In progress |
+| **M9 — Per-site database**           | Per-site Database tab in BenchDetail using `site_config.json` credentials                   | In progress |
+| **M10 — Site config + logs**         | Site config editor (form + allowlist), per-site log viewer with live tail                   | Planned     |
+| **M11 — Bench update + backup**      | `bench update` with live streaming, site backup + restore operations                        | Planned     |
+| **M12 — Server registry + tunnels**  | Server SQLModel, CRUD routes, `asyncssh` tunnel registry, one-click agent deploy            | Planned     |
+| **M13 — Dispatcher + remote UI**     | Route dispatcher for `server_id`, WebSocket proxy, server selector, Servers page             | Planned     |
 
 
 ---
@@ -542,3 +610,49 @@ V2 scope includes:
 | WhatsApp       | `https://github.com/frappe/frappe_whatsapp` |
 
 
+---
+
+## 13. Features — V2
+
+### 13.1 Per-Site Database Explorer
+
+Each site in a Frappe bench has its own MariaDB database whose credentials live in `sites/<site>/site_config.json`. V2 adds a **Database** tab to BenchDetail that lets users inspect and query any site's database without leaving the bench view.
+
+- A dropdown selects the site; the explorer connects using credentials read from `site_config.json` (with `common_site_config.json` fallback for host/port).
+- The same `DatabaseDataGrid` and `DatabaseSqlRunner` components used by the global explorer are reused via an `apiScope` prop.
+- The per-site explorer is scoped to one database (no database selector).
+
+### 13.2 Site Config Editor
+
+A form-based editor for the editable subset of `site_config.json`:
+
+- **Editable keys (allowlist):** `developer_mode`, `maintenance_mode`, `allow_tests`, `server_script_enabled`, `host_name`, `encryption_key`, `mail_server`, `mail_port`, `mail_login`, `mail_password`, `use_tls`, `auto_email_id`, `scheduler_enabled`, `pause_scheduler`, `limits.space_usage`, `limits.emails`, `limits.users`.
+- Read-only keys (`db_name`, `db_password`, etc.) are displayed below but not editable.
+- Writes are atomic (tmpfile + rename).
+
+### 13.3 Per-Site Log Viewer
+
+Exposes the bench `logs/` directory for a given site:
+
+- Lists log files (`web.log`, `scheduler.log`, `worker.log`, site-prefixed error logs).
+- Tail endpoint returns the last N lines of a file.
+- WebSocket live-tail (`tail -F`) streams into the existing `LogStream` component.
+- Log filenames are validated against a whitelist to prevent path traversal.
+
+### 13.4 Bench Update
+
+A single-operation flow that runs `bench update` with optional `--reset` and `--no-backup` flags. Streams live output via the existing operation/WebSocket infrastructure.
+
+### 13.5 Backup & Restore
+
+- **Backup:** Runs `bench --site <site> backup [--with-files]`, parses output for created filenames.
+- **Restore:** Runs `bench --site <site> restore` with a selected backup path and `db_root_password`.
+- Both stream logs and surface results in the UI.
+
+### 13.6 Remote Server Management (Pillar 1)
+
+- **Server registry:** SQLite table with `id`, `nickname`, `host`, `ssh_user`, `ssh_key_path`, `remote_agent_port`, `local_tunnel_port`, `status`, `last_connected_at`, `agent_version`.
+- **SSH tunnels:** `asyncssh` connections with `forward_local_port`, keepalive pings every 15 s.
+- **Agent deploy:** rsync backend tree → create venv → systemd user service (nohup fallback).
+- **Dispatcher:** Every existing route branches on `server_id` query param; remote calls are proxied over the tunnel.
+- **Frontend:** Dashboard server selector, Servers management page, `withServer` API helper, Zustand `currentServerId`.

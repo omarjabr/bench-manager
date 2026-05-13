@@ -26,9 +26,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { useTableColumns, useTableRows } from "@/hooks/useDatabase"
-import { deleteRow, getApiErrorMessage, updateCell } from "@/lib/api"
+import { useScopedTableColumns, useScopedTableRows } from "@/hooks/useDatabase"
+import { getApiErrorMessage, scopedDeleteRow, scopedUpdateCell } from "@/lib/api"
 import { formatCellValue } from "@/lib/databaseDisplay"
+import { useUiStore } from "@/stores/ui.store"
 
 import { TruncatedCell } from "./TruncatedCell"
 
@@ -39,25 +40,26 @@ const stickyActionsCellClass =
   "sticky right-0 z-10 w-24 border-l border-border bg-card text-right group-hover:bg-muted/50"
 
 type DatabaseDataGridProps = {
-  dbName: string
+  apiScope: string
   tableName: string
   page: number
   onPageChange: (page: number) => void
 }
 
 export function DatabaseDataGrid({
-  dbName,
+  apiScope,
   tableName,
   page,
   onPageChange,
 }: DatabaseDataGridProps) {
   const queryClient = useQueryClient()
-  const { data: columns = [], isLoading: colsLoading } = useTableColumns(
-    dbName,
+  const serverId = useUiStore((s) => s.currentServerId)
+  const { data: columns = [], isLoading: colsLoading } = useScopedTableColumns(
+    apiScope,
     tableName
   )
-  const { data: rowsData, isLoading: rowsLoading } = useTableRows(
-    dbName,
+  const { data: rowsData, isLoading: rowsLoading } = useScopedTableRows(
+    apiScope,
     tableName,
     page
   )
@@ -108,18 +110,18 @@ export function DatabaseDataGrid({
         const before = formatCellValue(originalRow[i])
         const after = draft[col] ?? ""
         if (before !== after) {
-          await updateCell(dbName, tableName, {
+          await scopedUpdateCell(apiScope, tableName, {
             primary_key_col: pkCol,
             primary_key_val: editingPk,
             column: col,
             value: after,
-          })
+          }, serverId)
         }
       }
       toast.success("Row updated")
       cancelEdit()
       await queryClient.invalidateQueries({
-        queryKey: ["database", "rows", dbName, tableName],
+        queryKey: ["database", "rows", apiScope, tableName, page, serverId],
       })
     } catch (err) {
       toast.error(getApiErrorMessage(err))
@@ -129,14 +131,14 @@ export function DatabaseDataGrid({
   const confirmDelete = async () => {
     if (!pkCol || deletePk === null) return
     try {
-      await deleteRow(dbName, tableName, {
+      await scopedDeleteRow(apiScope, tableName, {
         primary_key_col: pkCol,
         primary_key_val: deletePk,
-      })
+      }, serverId)
       toast.success("Row deleted")
       setDeletePk(null)
       await queryClient.invalidateQueries({
-        queryKey: ["database", "rows", dbName, tableName],
+        queryKey: ["database", "rows", apiScope, tableName, page, serverId],
       })
     } catch (err) {
       toast.error(getApiErrorMessage(err))

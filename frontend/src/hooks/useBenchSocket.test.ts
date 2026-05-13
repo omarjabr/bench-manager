@@ -76,7 +76,7 @@ describe("useBenchSocket", () => {
         app_count: 2,
       },
     ]
-    queryClient.setQueryData(["benches"], initial)
+    queryClient.setQueryData(["benches", "local"], initial)
 
     renderHook(() => useBenchSocket(), { wrapper })
 
@@ -87,7 +87,7 @@ describe("useBenchSocket", () => {
     })
 
     await waitFor(() => {
-      const data = queryClient.getQueryData<BenchSummary[]>(["benches"])
+      const data = queryClient.getQueryData<BenchSummary[]>(["benches", "local"])
       expect(data?.[0]?.status).toBe("running")
       expect(data?.[0]?.pid).toBe(4242)
       expect(data?.[0]?.path).toBe("/x/bench-a")

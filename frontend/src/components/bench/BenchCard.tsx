@@ -21,6 +21,7 @@ import {
   stopBench,
   type BenchSummary,
 } from "@/lib/api"
+import { useUiStore } from "@/stores/ui.store"
 
 type BenchCardProps = {
   bench: BenchSummary
@@ -36,6 +37,7 @@ function truncatePath(path: string, maxLen = 52): string {
 export function BenchCard({ bench }: BenchCardProps) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const serverId = useUiStore((s) => s.currentServerId)
   const [actionLoading, setActionLoading] = useState<"start" | "stop" | null>(
     null
   )
@@ -43,9 +45,9 @@ export function BenchCard({ bench }: BenchCardProps) {
   const handleStart = async () => {
     setActionLoading("start")
     try {
-      await startBench(bench.name)
-      await queryClient.invalidateQueries({ queryKey: ["benches"] })
-      await queryClient.invalidateQueries({ queryKey: ["bench", bench.name] })
+      await startBench(bench.name, serverId)
+      await queryClient.invalidateQueries({ queryKey: ["benches", serverId] })
+      await queryClient.invalidateQueries({ queryKey: ["bench", bench.name, serverId] })
     } catch (error) {
       toast.error(getApiErrorMessage(error))
     } finally {
@@ -56,9 +58,9 @@ export function BenchCard({ bench }: BenchCardProps) {
   const handleStop = async () => {
     setActionLoading("stop")
     try {
-      await stopBench(bench.name)
-      await queryClient.invalidateQueries({ queryKey: ["benches"] })
-      await queryClient.invalidateQueries({ queryKey: ["bench", bench.name] })
+      await stopBench(bench.name, serverId)
+      await queryClient.invalidateQueries({ queryKey: ["benches", serverId] })
+      await queryClient.invalidateQueries({ queryKey: ["bench", bench.name, serverId] })
     } catch (error) {
       toast.error(getApiErrorMessage(error))
     } finally {

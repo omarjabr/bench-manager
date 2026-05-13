@@ -10,29 +10,31 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
-import { getApiErrorMessage, runQuery, type QueryResult } from "@/lib/api"
+import { getApiErrorMessage, scopedRunQuery, type QueryResult } from "@/lib/api"
 import { formatCellValue } from "@/lib/databaseDisplay"
+import { useUiStore } from "@/stores/ui.store"
 
 import { TruncatedCell } from "./TruncatedCell"
 
 type DatabaseSqlRunnerProps = {
-  dbName: string | null
+  apiScope: string | null
 }
 
-export function DatabaseSqlRunner({ dbName }: DatabaseSqlRunnerProps) {
+export function DatabaseSqlRunner({ apiScope }: DatabaseSqlRunnerProps) {
+  const serverId = useUiStore((s) => s.currentServerId)
   const [sqlText, setSqlText] = useState("")
   const [result, setResult] = useState<QueryResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
 
   const execute = async () => {
-    if (!dbName) return
+    if (!apiScope) return
     const sql = sqlText.trim()
     if (!sql) return
     setError(null)
     setRunning(true)
     try {
-      const data = await runQuery(dbName, { sql })
+      const data = await scopedRunQuery(apiScope, { sql }, serverId)
       setResult(data)
     } catch (e) {
       setResult(null)
@@ -49,7 +51,7 @@ export function DatabaseSqlRunner({ dbName }: DatabaseSqlRunnerProps) {
     }
   }
 
-  if (!dbName) {
+  if (!apiScope) {
     return (
       <p className="text-sm text-muted-foreground">Select a database first</p>
     )

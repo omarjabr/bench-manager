@@ -177,7 +177,7 @@ async def test_init_returns_409_when_bench_directory_already_exists(
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        await start_bench_init(request, body)
+        await start_bench_init(request, body, server_id="local")
     assert exc_info.value.status_code == 409
     detail = str(exc_info.value.detail)
     assert "already exists" in detail

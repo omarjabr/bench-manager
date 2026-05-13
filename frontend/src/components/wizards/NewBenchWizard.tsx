@@ -67,6 +67,7 @@ export function NewBenchWizard({
   template = null,
 }: NewBenchWizardProps) {
   const navigate = useNavigate()
+  const serverId = useUiStore((s) => s.currentServerId)
   const setActiveOperationId = useUiStore((s) => s.setActiveOperationId)
   const setActiveBench = useUiStore((s) => s.setActiveBench)
   const wizardTemplate = useUiStore((s) => s.wizardTemplate)
@@ -306,7 +307,7 @@ export function NewBenchWizard({
         db_root_password: values.dbRootPassword,
         apps: selectedApps,
         python_version: "python3.11",
-      })
+      }, serverId)
       setActiveOperationId(res.operation_id)
       setActiveBench(name)
       navigate(`/benches/${encodeURIComponent(name)}`)

@@ -22,6 +22,7 @@ import {
   installAppsOnSiteSchema,
   type InstallAppsOnSiteFormValues,
 } from "@/schemas/site.schema"
+import { useUiStore } from "@/stores/ui.store"
 
 type InstallAppOnSiteDialogProps = {
   open: boolean
@@ -45,6 +46,7 @@ export function InstallAppOnSiteDialog({
     null
   )
   const queryClient = useQueryClient()
+  const serverId = useUiStore((s) => s.currentServerId)
   const installStream = useOperation(installOperationId)
   const processedInstallOpRef = useRef<string | null>(null)
 
@@ -81,8 +83,8 @@ export function InstallAppOnSiteDialog({
       return
     }
     processedInstallOpRef.current = installOperationId
-    void queryClient.invalidateQueries({ queryKey: ["bench", benchName] })
-    void queryClient.invalidateQueries({ queryKey: ["benches"] })
+    void queryClient.invalidateQueries({ queryKey: ["bench", benchName, serverId] })
+    void queryClient.invalidateQueries({ queryKey: ["benches", serverId] })
     if (installStream.exitCode === 0) {
       toast.success("Apps installed. Bench was restarted.")
     } else {
@@ -117,7 +119,7 @@ export function InstallAppOnSiteDialog({
         bench_name: benchName,
         site_name: siteName,
         apps: values.apps,
-      })
+      }, serverId)
       setInstallOperationId(res.operation_id)
     } catch (err) {
       toast.error(getApiErrorMessage(err))

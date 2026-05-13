@@ -3,6 +3,7 @@ import { create } from "zustand"
 import type { Template } from "@/lib/api"
 
 export const UI_THEME_STORAGE_KEY = "bench-manager-theme"
+export const UI_SERVER_STORAGE_KEY = "bench-manager-server"
 
 type Theme = "light" | "dark"
 
@@ -11,6 +12,9 @@ type UiState = {
   toggleSidebar: () => void
   theme: Theme
   setTheme: (theme: Theme) => void
+  /** Currently selected server id — affects all server-scoped data in the app. */
+  currentServerId: string
+  setCurrentServerId: (id: string) => void
   /** Bench name for an in-flight operation (e.g. init) — paired with ``activeOperationId``. */
   activeBenchName: string | null
   setActiveBench: (name: string | null) => void
@@ -37,6 +41,16 @@ function applyThemeToDocument(theme: Theme): void {
   document.documentElement.classList.toggle("dark", theme === "dark")
 }
 
+function readStoredServerId(): string {
+  try {
+    const value = localStorage.getItem(UI_SERVER_STORAGE_KEY)
+    if (typeof value === "string" && value.length > 0) return value
+  } catch {
+    /* localStorage may be unavailable */
+  }
+  return "local"
+}
+
 function getInitialSidebarOpen(): boolean {
   if (typeof window === "undefined") return true
   if (typeof window.matchMedia !== "function") return true
@@ -49,6 +63,7 @@ applyThemeToDocument(initialTheme)
 export const useUiStore = create<UiState>((set) => ({
   sidebarOpen: getInitialSidebarOpen(),
   theme: initialTheme,
+  currentServerId: readStoredServerId(),
   activeBenchName: null,
   activeOperationId: null,
   wizardTemplate: null,
@@ -62,6 +77,14 @@ export const useUiStore = create<UiState>((set) => ({
       /* ignore persistence failures */
     }
     set({ theme })
+  },
+  setCurrentServerId: (id) => {
+    try {
+      localStorage.setItem(UI_SERVER_STORAGE_KEY, id)
+    } catch {
+      /* ignore persistence failures */
+    }
+    set({ currentServerId: id })
   },
   setActiveBench: (name) => set({ activeBenchName: name }),
   setActiveOperationId: (id) => set({ activeOperationId: id }),

@@ -11,7 +11,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useBenches } from "@/hooks/useBenches"
+import { useSystemCheckReport } from "@/hooks/useSystemCheck"
 import type { BenchSummary } from "@/lib/api"
+import { useUiStore } from "@/stores/ui.store"
 
 type AppShellOutletContext = {
   searchQuery: string
@@ -67,6 +69,9 @@ function getErrorMessage(error: unknown): string {
 export default function Dashboard() {
   const { searchQuery } = useOutletContext<AppShellOutletContext>()
   const { data, isLoading, isError, error, refetch } = useBenches()
+  const serverId = useUiStore((s) => s.currentServerId)
+  const isLocalServer = serverId === "local"
+  const systemReport = useSystemCheckReport(isLocalServer)
 
   const filtered = useMemo(() => {
     if (!data) {
@@ -108,6 +113,21 @@ export default function Dashboard() {
             >
               Retry
             </Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {isLocalServer &&
+      systemReport.data !== undefined &&
+      systemReport.data.ready === false ? (
+        <Alert>
+          <AlertTitle>System is not ready for `bench init`</AlertTitle>
+          <AlertDescription>
+            Run the{" "}
+            <Link to="/system-check" className="text-primary underline-offset-4 hover:underline">
+              System Check
+            </Link>{" "}
+            page to install or review missing prerequisites.
           </AlertDescription>
         </Alert>
       ) : null}

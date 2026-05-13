@@ -34,8 +34,9 @@ import { Skeleton } from "@/components/ui/skeleton"
 import {
   useDatabases,
   useDatabaseStatus,
-  useDatabaseTables,
+  useScopedTables,
 } from "@/hooks/useDatabase"
+import { globalDbScope } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
 type DatabaseExplorerSidebarProps = {
@@ -63,8 +64,9 @@ export function DatabaseExplorerSidebar({
     setTableSearch("")
   }, [selectedDb])
 
+  const tableScope = activeDb ? globalDbScope(activeDb) : ""
   const { data: tables = [], isLoading: tablesLoading } =
-    useDatabaseTables(activeDb)
+    useScopedTables(tableScope)
 
   const tableQuery = tableSearch.trim().toLowerCase()
   const tableList = useMemo(() => {

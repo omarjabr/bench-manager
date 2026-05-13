@@ -20,6 +20,7 @@ function usePageInfo(): { title: string; showBack: boolean } {
   }
   if (pathname === "/templates") return { title: "Templates", showBack: false }
   if (pathname === "/database") return { title: "Database", showBack: false }
+  if (pathname === "/servers") return { title: "Servers", showBack: false }
   if (pathname === "/settings") return { title: "Settings", showBack: false }
   return { title: "Bench Manager", showBack: false }
 }

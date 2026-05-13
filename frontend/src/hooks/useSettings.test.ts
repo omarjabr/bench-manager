@@ -78,6 +78,7 @@ describe("useSettings", () => {
     expect(result.current.data?.app_registry).toHaveLength(2)
     expect(result.current.data?.app_registry[0]?.name).toBe("ERPNext")
     expect(getSettingsMock).toHaveBeenCalledTimes(1)
+    expect(getSettingsMock).toHaveBeenCalledWith("local")
   })
 
   it("has a staleTime of 60 seconds", async () => {

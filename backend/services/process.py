@@ -12,37 +12,167 @@ from models.bench import BenchStatus
 logger = logging.getLogger(__name__)
 
 
+def _process_matches_bench(proc: psutil.Process, bench_path: Path) -> bool:
+    """Return True when process cwd or command line references this bench."""
+    try:
+        cwd = proc.cwd()
+        try:
+            if Path(cwd).resolve() == bench_path:
+                return True
+        except (OSError, RuntimeError):
+            pass
+    except (psutil.Error, OSError, PermissionError):
+        pass
+
+    try:
+        cmdline = " ".join(proc.cmdline()).lower()
+    except (psutil.Error, OSError, PermissionError):
+        return False
+    return str(bench_path).lower() in cmdline
+
+
+def _running_pid_from_bench_pid_files(bench_path: Path) -> int | None:
+    """
+    Return a live process PID from ``config/pids/*.pid`` for this bench, if any.
+
+    Bench-managed PID files are a reliable fallback when supervisor command lines
+    do not include ``honcho``/``foreman``.
+    """
+    pids_dir = bench_path / "config" / "pids"
+    if not pids_dir.is_dir():
+        return None
+
+    for pid_file in sorted(pids_dir.glob("*.pid")):
+        try:
+            raw = pid_file.read_text(encoding="utf-8").strip()
+            pid = int(raw)
+            if pid <= 0:
+                continue
+        except (FileNotFoundError, PermissionError, OSError, ValueError):
+            continue
+
+        if not psutil.pid_exists(pid):
+            continue
+
+        try:
+            proc = psutil.Process(pid)
+            if not proc.is_running():
+                continue
+            if proc.status() == psutil.STATUS_ZOMBIE:
+                continue
+            if _process_matches_bench(proc, bench_path):
+                return pid
+        except (psutil.Error, OSError, PermissionError):
+            continue
+
+    return None
+
+
+_DEV_SUPERVISOR_MARKERS = ("honcho", "foreman")
+
+_PRODUCTION_WORKER_MARKERS = ("gunicorn", "redis-server", "node")
+
+
+def _bench_path_in_cmdline(bench_str_lower: str, joined_cmdline: str) -> bool:
+    """Return True when the resolved bench path string appears in the joined cmdline."""
+    return bench_str_lower in joined_cmdline
+
+
+def _is_dev_supervisor(joined: str) -> bool:
+    """Check if cmdline indicates a development-mode process manager."""
+    for marker in _DEV_SUPERVISOR_MARKERS:
+        if marker in joined:
+            return True
+    if "bench start" in joined:
+        return True
+    return False
+
+
+def _is_production_worker(joined: str) -> bool:
+    """Check if cmdline indicates a typical bench production worker."""
+    for marker in _PRODUCTION_WORKER_MARKERS:
+        if marker in joined:
+            return True
+    return False
+
+
+def _matches_bench_from_info(
+    proc_info: dict[str, object],
+    resolved_bench: Path,
+    bench_str_lower: str,
+) -> bool:
+    """
+    Determine if a process belongs to a bench using pre-fetched process_iter info.
+
+    Avoids re-reading /proc which can fail with permission errors for processes
+    owned by the same user on some configurations.
+    """
+    cwd = proc_info.get("cwd")
+    if isinstance(cwd, str) and cwd:
+        try:
+            if Path(cwd).resolve() == resolved_bench:
+                return True
+        except (OSError, RuntimeError):
+            pass
+
+    cmdline = proc_info.get("cmdline") or []
+    if isinstance(cmdline, list):
+        joined = " ".join(str(c) for c in cmdline).lower()
+        if bench_str_lower in joined:
+            return True
+
+    return False
+
+
 def get_bench_status(bench_path: Path) -> tuple[BenchStatus, int | None]:
     """
-    Return whether a bench supervisor appears to be running and its PID if found.
+    Return whether a bench appears to be running and its PID if found.
 
-    A process counts as the bench supervisor when its cwd matches ``bench_path`` and its
-    command line mentions ``honcho`` or ``foreman`` (typical for ``bench start``).
+    Checks both development mode (honcho/foreman via ``bench start``) and production
+    mode (gunicorn/redis-server/node workers managed by supervisor or systemd).
     """
     try:
         resolved_bench = bench_path.resolve()
     except (OSError, RuntimeError):
         return ("unknown", None)
 
+    bench_str_lower = str(resolved_bench).lower()
+    dev_pid: int | None = None
+    production_pid: int | None = None
+
     for proc in psutil.process_iter(["pid", "cwd", "cmdline"]):
         try:
-            cwd = proc.info.get("cwd")
-            if cwd is None:
-                continue
-            try:
-                resolved_cwd = Path(cwd).resolve()
-            except (OSError, RuntimeError):
-                continue
-            if resolved_cwd != resolved_bench:
-                continue
             cmdline = proc.info.get("cmdline") or []
-            joined = " ".join(cmdline).lower()
-            if "honcho" in joined or "foreman" in joined:
-                pid = proc.info.get("pid")
-                if isinstance(pid, int):
-                    return ("running", pid)
+            if not isinstance(cmdline, list):
+                continue
+            joined = " ".join(str(c) for c in cmdline).lower()
+
+            if not _is_dev_supervisor(joined) and not _is_production_worker(joined):
+                continue
+
+            if not _matches_bench_from_info(proc.info, resolved_bench, bench_str_lower):
+                continue
+
+            pid = proc.info.get("pid")
+            if not isinstance(pid, int):
+                continue
+
+            if _is_dev_supervisor(joined):
+                dev_pid = pid
+                break
+            if production_pid is None and _is_production_worker(joined):
+                production_pid = pid
         except (psutil.Error, OSError, PermissionError):
             continue
+
+    if dev_pid is not None:
+        return ("running", dev_pid)
+    if production_pid is not None:
+        return ("running", production_pid)
+
+    pid_from_files = _running_pid_from_bench_pid_files(resolved_bench)
+    if pid_from_files is not None:
+        return ("running", pid_from_files)
 
     return ("stopped", None)
 
