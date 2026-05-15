@@ -41,7 +41,6 @@ import {
   updateSettings,
   type AppRegistryEntry,
 } from "@/lib/api"
-import { useUiStore } from "@/stores/ui.store"
 import {
   appRegistryItemSchema,
   databaseConnectionSchema,
@@ -50,6 +49,7 @@ import {
   type DatabaseConnectionFormValues,
   type DiscoverySettingsFormValues,
 } from "@/schemas/settings.schema"
+import { useUiStore } from "@/stores/ui.store"
 
 function SettingsSkeleton() {
   return (
@@ -96,11 +96,14 @@ function DiscoveryCard() {
 
   const mutation = useMutation({
     mutationFn: (values: DiscoverySettingsFormValues) =>
-      updateSettings({
-        root_scan_dir: values.root_scan_dir,
-        excluded_paths: values.excluded_paths,
-        scan_interval_seconds: values.scan_interval_seconds,
-      }, serverId),
+      updateSettings(
+        {
+          root_scan_dir: values.root_scan_dir,
+          excluded_paths: values.excluded_paths,
+          scan_interval_seconds: values.scan_interval_seconds,
+        },
+        serverId
+      ),
     onSuccess: () => {
       toast.success("Discovery settings saved")
       void queryClient.invalidateQueries({ queryKey: ["settings", serverId] })
@@ -152,7 +155,7 @@ function DiscoveryCard() {
               {...form.register("root_scan_dir")}
             />
             {form.formState.errors.root_scan_dir && (
-              <p className="text-destructive text-xs">
+              <p className="text-xs text-destructive">
                 {form.formState.errors.root_scan_dir.message}
               </p>
             )}
@@ -187,7 +190,12 @@ function DiscoveryCard() {
                 onKeyDown={handleTagKeyDown}
                 autoComplete="off"
               />
-              <Button type="button" variant="secondary" size="sm" onClick={addTag}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={addTag}
+              >
                 Add
               </Button>
             </div>
@@ -204,13 +212,17 @@ function DiscoveryCard() {
               {...form.register("scan_interval_seconds")}
             />
             {form.formState.errors.scan_interval_seconds && (
-              <p className="text-destructive text-xs">
+              <p className="text-xs text-destructive">
                 {form.formState.errors.scan_interval_seconds.message}
               </p>
             )}
           </div>
 
-          <Button type="submit" className="w-fit gap-2" disabled={mutation.isPending}>
+          <Button
+            type="submit"
+            className="w-fit gap-2"
+            disabled={mutation.isPending}
+          >
             {mutation.isPending && <Spinner className="size-4" />}
             Save
           </Button>
@@ -348,7 +360,7 @@ function AppRegistryCard() {
                 {...addForm.register("name")}
               />
               {addForm.formState.errors.name && (
-                <p className="text-destructive text-xs">
+                <p className="text-xs text-destructive">
                   {addForm.formState.errors.name.message}
                 </p>
               )}
@@ -362,7 +374,7 @@ function AppRegistryCard() {
                 {...addForm.register("repo_url")}
               />
               {addForm.formState.errors.repo_url && (
-                <p className="text-destructive text-xs">
+                <p className="text-xs text-destructive">
                   {addForm.formState.errors.repo_url.message}
                 </p>
               )}
@@ -376,7 +388,7 @@ function AppRegistryCard() {
                 {...addForm.register("default_branch")}
               />
               {addForm.formState.errors.default_branch && (
-                <p className="text-destructive text-xs">
+                <p className="text-xs text-destructive">
                   {addForm.formState.errors.default_branch.message}
                 </p>
               )}
@@ -461,7 +473,9 @@ function DatabaseConnectionCard() {
     onSuccess: () => {
       toast.success("Database settings saved")
       void queryClient.invalidateQueries({ queryKey: ["settings", serverId] })
-      void queryClient.invalidateQueries({ queryKey: ["database", "status", serverId] })
+      void queryClient.invalidateQueries({
+        queryKey: ["database", "status", serverId],
+      })
     },
     onError: (e) => toast.error(getApiErrorMessage(e)),
   })
@@ -488,7 +502,7 @@ function DatabaseConnectionCard() {
               {...form.register("db_host")}
             />
             {form.formState.errors.db_host && (
-              <p className="text-destructive text-xs">
+              <p className="text-xs text-destructive">
                 {form.formState.errors.db_host.message}
               </p>
             )}
@@ -501,7 +515,7 @@ function DatabaseConnectionCard() {
               {...form.register("db_user")}
             />
             {form.formState.errors.db_user && (
-              <p className="text-destructive text-xs">
+              <p className="text-xs text-destructive">
                 {form.formState.errors.db_user.message}
               </p>
             )}
@@ -515,7 +529,7 @@ function DatabaseConnectionCard() {
               {...form.register("db_password")}
             />
             {form.formState.errors.db_password && (
-              <p className="text-destructive text-xs">
+              <p className="text-xs text-destructive">
                 {form.formState.errors.db_password.message}
               </p>
             )}
@@ -563,7 +577,7 @@ function AboutCard() {
           <dt className="text-muted-foreground">Repository</dt>
           <dd>
             <a
-              href="https://github.com/your-org/bench-manager"
+              href="https://github.com/omarjabr/bench-manager"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"

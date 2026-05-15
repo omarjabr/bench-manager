@@ -18,14 +18,14 @@ A local-first web application for discovering, monitoring, and controlling [Frap
 
 ## Prerequisites
 
-| Dependency | Version  | Notes                                        |
-| ---------- | -------- | -------------------------------------------- |
-| Python     | 3.11+    | Backend runtime                              |
-| Node.js    | 18+      | Frontend build toolchain                     |
-| pnpm       | 9+       | Package manager (`npm install -g pnpm`)      |
-| MariaDB    | 10.6+    | Required by Frappe benches you manage        |
-| Redis      | 6+       | Required by Frappe benches you manage        |
-| Frappe CLI | `bench`  | Must be installed and available on `$PATH`   |
+| Dependency | Version | Notes                                      |
+| ---------- | ------- | ------------------------------------------ |
+| Python     | 3.11+   | Backend runtime                            |
+| Node.js    | 18+     | Frontend build toolchain                   |
+| pnpm       | 9+      | Package manager (`npm install -g pnpm`)    |
+| MariaDB    | 10.6+   | Required by Frappe benches you manage      |
+| Redis      | 6+      | Required by Frappe benches you manage      |
+| Frappe CLI | `bench` | Must be installed and available on `$PATH` |
 
 > Bench Manager itself does not use MariaDB or Redis directly — they are prerequisites of the Frappe benches it manages.
 
@@ -36,7 +36,7 @@ A local-first web application for discovering, monitoring, and controlling [Frap
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-user/bench-manager.git
+git clone https://github.com/omarjabr/bench-manager.git
 cd bench-manager
 ```
 
@@ -139,32 +139,32 @@ bench-manager/
 
 ## Tech Stack
 
-| Layer    | Technology                                                    |
-| -------- | ------------------------------------------------------------- |
-| Backend  | FastAPI, SQLModel (SQLite), psutil, watchdog, asyncio         |
-| Frontend | React 19, Vite, Tailwind CSS, shadcn/ui (Nova), Zustand      |
-| Forms    | react-hook-form + zod                                         |
-| Data     | TanStack React Query                                          |
-| Terminal | xterm.js (WebSocket log streaming)                            |
-| Icons    | HugeIcons (`@hugeicons/react`)                                |
+| Layer    | Technology                                              |
+| -------- | ------------------------------------------------------- |
+| Backend  | FastAPI, SQLModel (SQLite), psutil, watchdog, asyncio   |
+| Frontend | React 19, Vite, Tailwind CSS, shadcn/ui (Nova), Zustand |
+| Forms    | react-hook-form + zod                                   |
+| Data     | TanStack React Query                                    |
+| Terminal | xterm.js (WebSocket log streaming)                      |
+| Icons    | HugeIcons (`@hugeicons/react`)                          |
 
 ---
 
 ## API Overview
 
-| Method   | Path                                     | Description                  |
-| -------- | ---------------------------------------- | ---------------------------- |
-| `GET`    | `/api/benches`                           | List all discovered benches  |
-| `GET`    | `/api/benches/{name}`                    | Bench detail                 |
-| `POST`   | `/api/benches/{name}/start`              | Start a bench                |
-| `POST`   | `/api/benches/{name}/stop`               | Stop a bench                 |
-| `POST`   | `/api/benches/{name}/restart`            | Restart a bench              |
-| `GET`    | `/api/templates`                         | List templates               |
-| `POST`   | `/api/operations/init`                   | Create a new bench           |
-| `POST`   | `/api/operations/get-app`                | Install an app into a bench  |
-| `GET`    | `/api/settings`                          | Get settings                 |
-| `PUT`    | `/api/settings`                          | Update settings              |
-| `GET`    | `/health`                                | Liveness check               |
+| Method | Path                          | Description                 |
+| ------ | ----------------------------- | --------------------------- |
+| `GET`  | `/api/benches`                | List all discovered benches |
+| `GET`  | `/api/benches/{name}`         | Bench detail                |
+| `POST` | `/api/benches/{name}/start`   | Start a bench               |
+| `POST` | `/api/benches/{name}/stop`    | Stop a bench                |
+| `POST` | `/api/benches/{name}/restart` | Restart a bench             |
+| `GET`  | `/api/templates`              | List templates              |
+| `POST` | `/api/operations/init`        | Create a new bench          |
+| `POST` | `/api/operations/get-app`     | Install an app into a bench |
+| `GET`  | `/api/settings`               | Get settings                |
+| `PUT`  | `/api/settings`               | Update settings             |
+| `GET`  | `/health`                     | Liveness check              |
 
 **WebSocket endpoints:**
 
