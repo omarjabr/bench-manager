@@ -38,6 +38,8 @@ EDITABLE_KEYS: set[str] = {
     "auto_email_id",
     "scheduler_enabled",
     "pause_scheduler",
+    "allow_cors",
+    "ignore_csrf",
 }
 
 EDITABLE_NESTED_KEYS: dict[str, set[str]] = {

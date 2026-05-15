@@ -49,6 +49,9 @@ const TOGGLE_KEYS = new Set([
   "pause_scheduler",
 ])
 
+/** Keys treated as boolean toggles stored as real `true`/`false` (not 0/1). */
+const BOOL_TOGGLE_KEYS = new Set(["ignore_csrf"])
+
 const FIELD_LABELS: Record<string, string> = {
   developer_mode: "Developer Mode",
   maintenance_mode: "Maintenance Mode",
@@ -64,6 +67,8 @@ const FIELD_LABELS: Record<string, string> = {
   auto_email_id: "Auto Email ID",
   scheduler_enabled: "Scheduler Enabled",
   pause_scheduler: "Pause Scheduler",
+  allow_cors: "Allow CORS",
+  ignore_csrf: "Ignore CSRF",
 }
 
 const LIMITS_LABELS: Record<string, string> = {
@@ -198,6 +203,24 @@ export function SiteConfigEditor({ benchName, sites }: SiteConfigEditorProps) {
                         form.setValue(
                           key as keyof SiteConfigFormValues,
                           checked ? 1 : 0,
+                          { shouldDirty: true },
+                        )
+                      }
+                    />
+                  </div>
+                )
+              }
+              if (BOOL_TOGGLE_KEYS.has(key)) {
+                return (
+                  <div key={key} className="flex items-center justify-between gap-4">
+                    <Label htmlFor={key}>{FIELD_LABELS[key]}</Label>
+                    <Switch
+                      id={key}
+                      checked={form.watch(key as keyof SiteConfigFormValues) === true}
+                      onCheckedChange={(checked) =>
+                        form.setValue(
+                          key as keyof SiteConfigFormValues,
+                          checked,
                           { shouldDirty: true },
                         )
                       }

@@ -18,9 +18,22 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["system-check"])
 
+# pip gained --break-system-packages in 23.0.1. Older pips (e.g. Ubuntu 22.04's
+# 22.0.2) reject the flag and also don't enforce PEP 668, so we only pass the
+# flag when the local pip advertises support for it.
+_PIP_BREAK_SUFFIX = (
+    "$(pip3 install --help 2>/dev/null | "
+    "grep -q -- --break-system-packages && echo --break-system-packages)"
+)
+
 _ALLOWED_FIX_COMMANDS: dict[str, str] = {
     "apt_packages": (
-        "apt-get update && apt-get install -y "
+        "export DEBIAN_FRONTEND=noninteractive && "
+        "apt-get update && "
+        "apt-get -y --fix-broken install && "
+        "apt-get install -y "
+        "-o Dpkg::Options::=--force-confdef "
+        "-o Dpkg::Options::=--force-confold "
         "git python3-dev python3-setuptools python3-pip "
         "software-properties-common curl xvfb libfontconfig wkhtmltopdf "
         "redis-server mariadb-server"
@@ -31,8 +44,8 @@ _ALLOWED_FIX_COMMANDS: dict[str, str] = {
     ),
     "npm_apt": "apt-get install -y npm",
     "yarn_global": "npm install -g yarn",
-    "frappe_bench": "pip3 install frappe-bench --break-system-packages",
-    "ansible": "pip3 install ansible --break-system-packages",
+    "frappe_bench": f"pip3 install frappe-bench {_PIP_BREAK_SUFFIX}",
+    "ansible": f"pip3 install ansible {_PIP_BREAK_SUFFIX}",
     "mariadb_running": "systemctl start mariadb && systemctl enable mariadb",
     "mariadb_charset": (
         "cp /etc/mysql/my.cnf /etc/mysql/my.cnf.bm.bak && "
@@ -79,7 +92,8 @@ async def run_system_fix(
 
     command = _ALLOWED_FIX_COMMANDS.get(group_id)
     if command is None:
-        raise HTTPException(status_code=404, detail=f"Unknown fix group: {group_id}")
+        raise HTTPException(
+            status_code=404, detail=f"Unknown fix group: {group_id}")
 
     sudo_cmd = ["sudo", "-S", "-p", "", "bash", "-lc", command]
     operation_id = create_operation_id()

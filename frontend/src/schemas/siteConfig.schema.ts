@@ -21,6 +21,8 @@ export const siteConfigSchema = z.object({
   auto_email_id: z.string().optional(),
   scheduler_enabled: z.coerce.number().min(0).max(1).optional(),
   pause_scheduler: z.coerce.number().min(0).max(1).optional(),
+  allow_cors: z.string().optional(),
+  ignore_csrf: z.boolean().optional(),
   limits: limitsSchema.optional(),
 })
 
