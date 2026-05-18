@@ -310,18 +310,19 @@ def _ensure_frappe_app_name(bench_dir: Path, names: list[str]) -> list[str]:
 def _installed_app_name_list(bench_dir: Path, site_name: str) -> list[str]:
     """
     Resolve installed app names for a site: per-site ``apps.txt``, merged with
-    ``sites/apps.txt``; if per-site file is missing or yields no names, use
-    ``bench list-apps`` output.
+    ``sites/apps.txt``; if both are missing or empty, use ``bench list-apps`` output.
 
     Names are always single tokens (no inline version text). After merging all sources,
     duplicates are removed so each app name appears once.
     """
     per_site = _read_lines_from_site_apps_txt(bench_dir, site_name)
     bench_level = _read_lines_from_bench_sites_apps_txt(bench_dir)
-    if len(per_site) == 0:
-        names = _list_apps_from_bench_cli(bench_dir, site_name)
-    else:
+    if len(per_site) > 0:
         names = _merge_ordered_unique_app_names(per_site, bench_level)
+    elif len(bench_level) > 0:
+        names = bench_level
+    else:
+        names = _list_apps_from_bench_cli(bench_dir, site_name)
     names = _ensure_frappe_app_name(bench_dir, names)
     return _dedupe_app_names_ordered(names)
 
