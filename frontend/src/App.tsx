@@ -7,6 +7,7 @@ import { Topbar } from "@/components/layout/Topbar"
 import { Toaster } from "@/components/ui/sonner"
 import { NewBenchWizard } from "@/components/wizards/NewBenchWizard"
 import { cn } from "@/lib/utils"
+import Analytics from "@/pages/Analytics"
 import BenchDetail from "@/pages/BenchDetail"
 import Dashboard from "@/pages/Dashboard"
 import Database from "@/pages/Database"
@@ -79,6 +80,7 @@ export function App() {
             <Route path="/servers" element={<Servers />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/system-check" element={<SystemCheck />} />
+            <Route path="/analytics" element={<Analytics />} />
           </Route>
         </Routes>
       </BrowserRouter>

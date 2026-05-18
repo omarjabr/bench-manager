@@ -1,4 +1,5 @@
 import {
+  Analytics01Icon,
   ArrowDown01Icon,
   CloudServerIcon,
   DatabaseIcon,
@@ -62,6 +63,7 @@ const NAV_ITEMS: NavItemDef[] = [
   { to: "/", label: "Dashboard", icon: Home01Icon, end: true },
   { to: "/templates", label: "Templates", icon: Layout01Icon },
   { to: "/database", label: "Database", icon: DatabaseIcon },
+  { to: "/analytics", label: "Analytics", icon: Analytics01Icon },
   { to: "/system-check", label: "System Check", icon: Settings02Icon, localOnly: true },
   { to: "/servers", label: "Servers", icon: CloudServerIcon },
   { to: "/settings", label: "Settings", icon: Settings02Icon },

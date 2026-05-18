@@ -1,7 +1,7 @@
 """FastAPI application entry point."""
 
 from ws.manager import connection_manager
-from routes import benches, database, logs, operations, servers, settings, site_config, site_database, sites, system_check, templates
+from routes import benches, database, logs, operations, servers, settings, site_config, site_database, sites, system_analytics, system_check, templates
 from database import create_db_and_tables
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI
@@ -59,6 +59,7 @@ app.include_router(logs.router, prefix="/api")
 app.include_router(site_config.router, prefix="/api")
 app.include_router(servers.router, prefix="/api")
 app.include_router(system_check.router, prefix="/api")
+app.include_router(system_analytics.router, prefix="/api")
 
 
 @app.get("/health")

@@ -870,3 +870,50 @@ export async function getBenchFiles(
   )
   return res.data
 }
+
+/* ------------------------------------------------------------------ */
+/*  System Analytics                                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A point-in-time snapshot of system resource metrics.
+ *
+ * Contains CPU, memory, disk, network utilization, boot time,
+ * and process count for the target server.
+ */
+export type SystemAnalyticsSnapshot = {
+  /** Current CPU utilization as a percentage (0-100) */
+  cpu_percent: number
+  /** Currently used memory in bytes */
+  memory_used_bytes: number
+  /** Total system memory in bytes */
+  memory_total_bytes: number
+  /** Memory utilization as a percentage (0-100) */
+  memory_percent: number
+  /** Currently used disk space in bytes on root partition */
+  disk_used_bytes: number
+  /** Total disk space in bytes on root partition */
+  disk_total_bytes: number
+  /** Disk utilization as a percentage (0-100) */
+  disk_percent: number
+  /** Total bytes sent over all network interfaces since boot */
+  network_bytes_sent: number
+  /** Total bytes received over all network interfaces since boot */
+  network_bytes_recv: number
+  /** System boot time as a Unix timestamp */
+  boot_time: number
+  /** Total number of running processes */
+  process_count: number
+}
+
+/**
+ * Fetch a snapshot of current system resource metrics.
+ */
+export async function getSystemAnalytics(
+  serverId?: string,
+): Promise<SystemAnalyticsSnapshot> {
+  const res = await api.get<SystemAnalyticsSnapshot>("/api/system-analytics", {
+    params: withServer(serverId),
+  })
+  return res.data
+}
