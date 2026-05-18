@@ -87,3 +87,86 @@ export const getAppDialogFormSchema = z.object({
 })
 
 export type GetAppDialogFormValues = z.infer<typeof getAppDialogFormSchema>
+
+/**
+ * Available license options for new Frappe apps.
+ * Matches the choices offered by `bench new-app`.
+ */
+export const APP_LICENSE_OPTIONS = [
+  "agpl-3.0",
+  "apache-2.0",
+  "bsd-2-clause",
+  "bsd-3-clause",
+  "bsl-1.0",
+  "cc0-1.0",
+  "epl-2.0",
+  "gpl-2.0",
+  "gpl-3.0",
+  "lgpl-2.1",
+  "mit",
+  "mpl-2.0",
+  "unlicense",
+] as const
+
+export type AppLicense = (typeof APP_LICENSE_OPTIONS)[number]
+
+/**
+ * Regex for validating Frappe app names.
+ * Must be lowercase, start with a letter, and contain only letters, digits, and underscores.
+ */
+const appNameRegex = /^[a-z][a-z0-9_]*$/
+
+/**
+ * Schema for the New App dialog form fields.
+ * Used to create a new Frappe app via `bench new-app`.
+ */
+export const newAppDialogFormSchema = z.object({
+  appName: z
+    .string()
+    .min(1, "App name is required")
+    .regex(
+      appNameRegex,
+      "Must start with a lowercase letter and contain only lowercase letters, digits, or underscores"
+    ),
+  appTitle: z.string().min(1, "App title is required"),
+  appDescription: z.string().default(""),
+  appPublisher: z.string().min(1, "Publisher is required"),
+  appEmail: z.string().email("Must be a valid email address"),
+  appLicense: z.enum(APP_LICENSE_OPTIONS).default("mit"),
+  createGithubWorkflow: z.boolean().default(false),
+})
+
+export type NewAppDialogFormValues = z.infer<typeof newAppDialogFormSchema>
+
+/**
+ * Available framework options for doppio SPA.
+ */
+export const SPA_FRAMEWORK_OPTIONS = ["vue", "react"] as const
+
+export type SpaFramework = (typeof SPA_FRAMEWORK_OPTIONS)[number]
+
+/**
+ * Regex for validating SPA dashboard names.
+ * Must be lowercase, start with a letter, and contain only letters, digits, and underscores.
+ */
+const spaNameRegex = /^[a-z][a-z0-9_]*$/
+
+/**
+ * Schema for the Add SPA dialog form fields.
+ * Used to create a new SPA via `bench add-spa`.
+ */
+export const addSpaDialogFormSchema = z.object({
+  spaName: z
+    .string()
+    .min(1, "SPA name is required")
+    .regex(
+      spaNameRegex,
+      "Must start with a lowercase letter and contain only lowercase letters, digits, or underscores"
+    ),
+  appName: z.string().min(1, "App name is required"),
+  framework: z.enum(SPA_FRAMEWORK_OPTIONS).default("vue"),
+  useTailwind: z.boolean().default(false),
+  useTypescript: z.boolean().default(true),
+})
+
+export type AddSpaDialogFormValues = z.infer<typeof addSpaDialogFormSchema>

@@ -181,6 +181,108 @@ class BenchUpdateRequest(BaseModel):
         return value
 
 
+_APP_LICENSE_OPTIONS = frozenset([
+    "agpl-3.0",
+    "apache-2.0",
+    "bsd-2-clause",
+    "bsd-3-clause",
+    "bsl-1.0",
+    "cc0-1.0",
+    "epl-2.0",
+    "gpl-2.0",
+    "gpl-3.0",
+    "lgpl-2.1",
+    "mit",
+    "mpl-2.0",
+    "unlicense",
+])
+
+
+class NewAppOperationRequest(BaseModel):
+    """Payload for ``POST /api/operations/new-app``."""
+
+    bench_name: str = Field(min_length=1)
+    app_name: str = Field(min_length=1)
+    app_title: str = Field(min_length=1)
+    app_description: str = Field(default="")
+    app_publisher: str = Field(min_length=1)
+    app_email: str = Field(min_length=1)
+    app_license: str = Field(default="mit")
+    create_github_workflow: bool = Field(default=False)
+
+    @field_validator("bench_name")
+    @classmethod
+    def validate_bench_name_new_app(cls, value: str) -> str:
+        if not _BENCH_NAME_PATTERN.fullmatch(value):
+            raise ValueError(
+                "bench_name may only contain letters, digits, underscores, and hyphens"
+            )
+        return value
+
+    @field_validator("app_name")
+    @classmethod
+    def validate_app_name_new_app(cls, value: str) -> str:
+        if not re.fullmatch(r"^[a-z][a-z0-9_]*$", value):
+            raise ValueError(
+                "app_name must start with a lowercase letter and contain only "
+                "lowercase letters, digits, or underscores"
+            )
+        return value
+
+    @field_validator("app_license")
+    @classmethod
+    def validate_app_license(cls, value: str) -> str:
+        if value not in _APP_LICENSE_OPTIONS:
+            raise ValueError(f"app_license must be one of: {sorted(_APP_LICENSE_OPTIONS)}")
+        return value
+
+    @field_validator("app_email")
+    @classmethod
+    def validate_app_email(cls, value: str) -> str:
+        if "@" not in value or "." not in value.split("@")[-1]:
+            raise ValueError("app_email must be a valid email address")
+        return value
+
+
+class AddSpaOperationRequest(BaseModel):
+    """Payload for ``POST /api/operations/add-spa``."""
+
+    bench_name: str = Field(min_length=1)
+    spa_name: str = Field(min_length=1)
+    app_name: str = Field(min_length=1)
+    framework: Literal["vue", "react"] = Field(default="vue")
+    use_tailwind: bool = Field(default=True)
+    use_typescript: bool = Field(default=True)
+
+    @field_validator("bench_name")
+    @classmethod
+    def validate_bench_name_add_spa(cls, value: str) -> str:
+        if not _BENCH_NAME_PATTERN.fullmatch(value):
+            raise ValueError(
+                "bench_name may only contain letters, digits, underscores, and hyphens"
+            )
+        return value
+
+    @field_validator("spa_name")
+    @classmethod
+    def validate_spa_name(cls, value: str) -> str:
+        if not re.fullmatch(r"^[a-z][a-z0-9_]*$", value):
+            raise ValueError(
+                "spa_name must start with a lowercase letter and contain only "
+                "lowercase letters, digits, or underscores"
+            )
+        return value
+
+    @field_validator("app_name")
+    @classmethod
+    def validate_app_name_add_spa(cls, value: str) -> str:
+        if not _APP_NAME_PATTERN.fullmatch(value):
+            raise ValueError(
+                "app_name may only contain letters, digits, underscores, and hyphens"
+            )
+        return value
+
+
 _SITE_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 
@@ -546,6 +648,117 @@ async def start_get_app(
 
     async def _task() -> None:
         await run_operation(operation_id, cmd, bench_path, ws_manager)
+
+    asyncio.create_task(_task())
+    return OperationIdResponse(operation_id=operation_id)
+
+
+@router.post("/operations/new-app", response_model=OperationIdResponse)
+async def start_new_app(
+    request: Request,
+    body: NewAppOperationRequest,
+    server_id: str = Depends(get_server_id),
+) -> OperationIdResponse:
+    """Run ``bench new-app`` inside a discovered bench directory."""
+    if not is_local(server_id):
+        return await call_remote(
+            server_id, "POST", "/api/operations/new-app", body=body.model_dump()
+        )
+    try:
+        bench_exe = process.resolve_bench_executable()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    bench_path = await _find_bench_path(body.bench_name)
+    app_dir = bench_path / "apps" / body.app_name
+    if app_dir.is_dir():
+        raise HTTPException(
+            status_code=409,
+            detail=f"An app named '{body.app_name}' already exists in this bench.",
+        )
+
+    operation_id = create_operation_id()
+    ws_manager = request.app.state.ws_manager
+    cmd = [str(bench_exe), "new-app", "--no-git", body.app_name]
+
+    stdin_answers = "\n".join([
+        body.app_title,
+        body.app_description,
+        body.app_publisher,
+        body.app_email,
+        body.app_license,
+        "y" if body.create_github_workflow else "n",
+    ])
+
+    async def _task() -> None:
+        await run_operation(
+            operation_id,
+            cmd,
+            bench_path,
+            ws_manager,
+            stdin_input=stdin_answers,
+        )
+
+    asyncio.create_task(_task())
+    return OperationIdResponse(operation_id=operation_id)
+
+
+@router.post("/operations/add-spa", response_model=OperationIdResponse)
+async def start_add_spa(
+    request: Request,
+    body: AddSpaOperationRequest,
+    server_id: str = Depends(get_server_id),
+) -> OperationIdResponse:
+    """Run ``bench add-spa`` inside a discovered bench directory (requires doppio)."""
+    if not is_local(server_id):
+        return await call_remote(
+            server_id, "POST", "/api/operations/add-spa", body=body.model_dump()
+        )
+    try:
+        bench_exe = process.resolve_bench_executable()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    bench_path = await _find_bench_path(body.bench_name)
+
+    doppio_dir = bench_path / "apps" / "doppio"
+    if not doppio_dir.is_dir():
+        raise HTTPException(
+            status_code=400,
+            detail="Doppio is not installed in this bench. Install it first with 'bench get-app doppio'.",
+        )
+
+    app_dir = bench_path / "apps" / body.app_name
+    if not app_dir.is_dir():
+        raise HTTPException(
+            status_code=404,
+            detail=f"App '{body.app_name}' not found in this bench.",
+        )
+
+    operation_id = create_operation_id()
+    ws_manager = request.app.state.ws_manager
+
+    cmd: list[str] = [str(bench_exe), "add-spa"]
+    if body.use_tailwind:
+        cmd.append("--tailwindcss")
+    if body.use_typescript:
+        cmd.append("--typescript")
+
+    stdin_answers = "\n".join([
+        body.spa_name,
+        body.app_name,
+        body.framework,
+        "n",
+    ])
+
+    async def _task() -> None:
+        await run_operation(
+            operation_id,
+            cmd,
+            bench_path,
+            ws_manager,
+            stdin_input=stdin_answers,
+        )
 
     asyncio.create_task(_task())
     return OperationIdResponse(operation_id=operation_id)

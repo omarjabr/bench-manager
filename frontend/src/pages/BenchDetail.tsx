@@ -40,6 +40,14 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import {
@@ -56,13 +64,22 @@ import { useBench } from "@/hooks/useBench"
 import { useOperation } from "@/hooks/useOperation"
 import {
   getApiErrorMessage,
+  postOperationAddSpa,
   postOperationBenchUpdate,
   postOperationGetApp,
+  postOperationNewApp,
   restartBench,
   startBench,
   stopBench,
 } from "@/lib/api"
-import { getAppDialogFormSchema } from "@/schemas/bench.schema"
+import {
+  addSpaDialogFormSchema,
+  APP_LICENSE_OPTIONS,
+  getAppDialogFormSchema,
+  newAppDialogFormSchema,
+  SPA_FRAMEWORK_OPTIONS,
+} from "@/schemas/bench.schema"
+import type { AppLicense, SpaFramework } from "@/schemas/bench.schema"
 import { useUiStore } from "@/stores/ui.store"
 
 function isNotFoundError(error: unknown): boolean {
@@ -159,6 +176,39 @@ export default function BenchDetail() {
   )
   const getAppStream = useOperation(getAppOperationId)
   const getAppToastOpRef = useRef<string | null>(null)
+
+  const [newAppOpen, setNewAppOpen] = useState(false)
+  const [newAppName, setNewAppName] = useState("")
+  const [newAppTitle, setNewAppTitle] = useState("")
+  const [newAppDescription, setNewAppDescription] = useState("")
+  const [newAppPublisher, setNewAppPublisher] = useState("")
+  const [newAppEmail, setNewAppEmail] = useState("")
+  const [newAppLicense, setNewAppLicense] = useState<AppLicense>("mit")
+  const [newAppGithubWorkflow, setNewAppGithubWorkflow] = useState(false)
+  const [newAppError, setNewAppError] = useState<string | null>(null)
+  const [newAppOperationId, setNewAppOperationId] = useState<string | null>(null)
+  const newAppStream = useOperation(newAppOperationId)
+  const newAppToastOpRef = useRef<string | null>(null)
+
+  const [addSpaOpen, setAddSpaOpen] = useState(false)
+  const [addSpaName, setAddSpaName] = useState("")
+  const [addSpaAppName, setAddSpaAppName] = useState("")
+  const [addSpaFramework, setAddSpaFramework] = useState<SpaFramework>("react")
+  const [addSpaTailwind, setAddSpaTailwind] = useState(false)
+  const [addSpaTypescript, setAddSpaTypescript] = useState(true)
+  const [addSpaError, setAddSpaError] = useState<string | null>(null)
+  const [addSpaOperationId, setAddSpaOperationId] = useState<string | null>(null)
+  const addSpaStream = useOperation(addSpaOperationId)
+  const addSpaToastOpRef = useRef<string | null>(null)
+
+  const [installDoppioOperationId, setInstallDoppioOperationId] = useState<string | null>(null)
+  const installDoppioStream = useOperation(installDoppioOperationId)
+  const installDoppioToastOpRef = useRef<string | null>(null)
+
+  const hasDoppio = useMemo(() => {
+    if (!data) return false
+    return data.apps.some((app) => app.name === "doppio")
+  }, [data])
 
   const handleStart = async () => {
     if (benchName.length === 0) {
@@ -267,6 +317,204 @@ export default function BenchDetail() {
     getAppOperationId,
     queryClient,
     benchName,
+  ])
+
+  const handleNewAppOpenChange = (next: boolean) => {
+    if (
+      !next &&
+      newAppOperationId !== null &&
+      newAppStream.status === "running"
+    ) {
+      return
+    }
+    if (!next) {
+      setNewAppName("")
+      setNewAppTitle("")
+      setNewAppDescription("")
+      setNewAppPublisher("")
+      setNewAppEmail("")
+      setNewAppLicense("mit")
+      setNewAppGithubWorkflow(false)
+      setNewAppError(null)
+      setNewAppOperationId(null)
+      newAppToastOpRef.current = null
+    }
+    setNewAppOpen(next)
+  }
+
+  const handleNewAppSubmit = async () => {
+    setNewAppError(null)
+    const parsed = newAppDialogFormSchema.safeParse({
+      appName: newAppName.trim(),
+      appTitle: newAppTitle.trim(),
+      appDescription: newAppDescription.trim(),
+      appPublisher: newAppPublisher.trim(),
+      appEmail: newAppEmail.trim(),
+      appLicense: newAppLicense,
+      createGithubWorkflow: newAppGithubWorkflow,
+    })
+    if (!parsed.success) {
+      setNewAppError(parsed.error.issues[0]?.message ?? "Invalid input")
+      return
+    }
+    try {
+      const res = await postOperationNewApp(
+        {
+          bench_name: benchName,
+          app_name: parsed.data.appName,
+          app_title: parsed.data.appTitle,
+          app_description: parsed.data.appDescription,
+          app_publisher: parsed.data.appPublisher,
+          app_email: parsed.data.appEmail,
+          app_license: parsed.data.appLicense,
+          create_github_workflow: parsed.data.createGithubWorkflow,
+        },
+        serverId
+      )
+      setNewAppOperationId(res.operation_id)
+    } catch (err) {
+      toast.error(getApiErrorMessage(err))
+    }
+  }
+
+  useEffect(() => {
+    if (
+      newAppStream.status === "done" &&
+      newAppStream.exitCode === 0 &&
+      newAppOperationId !== null
+    ) {
+      if (newAppToastOpRef.current === newAppOperationId) {
+        return
+      }
+      newAppToastOpRef.current = newAppOperationId
+      void queryClient.invalidateQueries({ queryKey: ["bench", benchName, serverId] })
+      void queryClient.invalidateQueries({ queryKey: ["benches", serverId] })
+      toast.success(
+        "App created successfully. To install it on a site, use the Install App button on the Sites tab."
+      )
+    }
+  }, [
+    newAppStream.status,
+    newAppStream.exitCode,
+    newAppOperationId,
+    queryClient,
+    benchName,
+    serverId,
+  ])
+
+  const handleAddSpaOpenChange = (next: boolean) => {
+    const isRunning =
+      (addSpaOperationId !== null && addSpaStream.status === "running") ||
+      (installDoppioOperationId !== null && installDoppioStream.status === "running")
+    if (!next && isRunning) {
+      return
+    }
+    if (!next) {
+      setAddSpaName("")
+      setAddSpaAppName("")
+      setAddSpaFramework("react")
+      setAddSpaTailwind(false)
+      setAddSpaTypescript(true)
+      setAddSpaError(null)
+      setAddSpaOperationId(null)
+      addSpaToastOpRef.current = null
+      setInstallDoppioOperationId(null)
+      installDoppioToastOpRef.current = null
+    }
+    setAddSpaOpen(next)
+  }
+
+  const handleInstallDoppio = async () => {
+    try {
+      const res = await postOperationGetApp(
+        {
+          bench_name: benchName,
+          repo_url: "https://github.com/NagariaHussain/doppio",
+        },
+        serverId
+      )
+      setInstallDoppioOperationId(res.operation_id)
+    } catch (err) {
+      toast.error(getApiErrorMessage(err))
+    }
+  }
+
+  const handleAddSpaSubmit = async () => {
+    setAddSpaError(null)
+    const parsed = addSpaDialogFormSchema.safeParse({
+      spaName: addSpaName.trim(),
+      appName: addSpaAppName,
+      framework: addSpaFramework,
+      useTailwind: addSpaTailwind,
+      useTypescript: addSpaTypescript,
+    })
+    if (!parsed.success) {
+      setAddSpaError(parsed.error.issues[0]?.message ?? "Invalid input")
+      return
+    }
+    try {
+      const res = await postOperationAddSpa(
+        {
+          bench_name: benchName,
+          spa_name: parsed.data.spaName,
+          app_name: parsed.data.appName,
+          framework: parsed.data.framework,
+          use_tailwind: parsed.data.useTailwind,
+          use_typescript: parsed.data.useTypescript,
+        },
+        serverId
+      )
+      setAddSpaOperationId(res.operation_id)
+    } catch (err) {
+      toast.error(getApiErrorMessage(err))
+    }
+  }
+
+  useEffect(() => {
+    if (
+      addSpaStream.status === "done" &&
+      addSpaStream.exitCode === 0 &&
+      addSpaOperationId !== null
+    ) {
+      if (addSpaToastOpRef.current === addSpaOperationId) {
+        return
+      }
+      addSpaToastOpRef.current = addSpaOperationId
+      void queryClient.invalidateQueries({ queryKey: ["bench", benchName, serverId] })
+      void queryClient.invalidateQueries({ queryKey: ["benches", serverId] })
+      toast.success("SPA created successfully.")
+    }
+  }, [
+    addSpaStream.status,
+    addSpaStream.exitCode,
+    addSpaOperationId,
+    queryClient,
+    benchName,
+    serverId,
+  ])
+
+  useEffect(() => {
+    if (
+      installDoppioStream.status === "done" &&
+      installDoppioStream.exitCode === 0 &&
+      installDoppioOperationId !== null
+    ) {
+      if (installDoppioToastOpRef.current === installDoppioOperationId) {
+        return
+      }
+      installDoppioToastOpRef.current = installDoppioOperationId
+      void queryClient.invalidateQueries({ queryKey: ["bench", benchName, serverId] })
+      void queryClient.invalidateQueries({ queryKey: ["benches", serverId] })
+      setInstallDoppioOperationId(null)
+      toast.success("Doppio installed successfully. You can now create an SPA.")
+    }
+  }, [
+    installDoppioStream.status,
+    installDoppioStream.exitCode,
+    installDoppioOperationId,
+    queryClient,
+    benchName,
+    serverId,
   ])
 
   const [updateOpen, setUpdateOpen] = useState(false)
@@ -590,7 +838,7 @@ export default function BenchDetail() {
             <TabPanelSkeleton />
           ) : data ? (
             <div className="flex flex-col gap-4">
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
                 <Button
                   type="button"
                   size="sm"
@@ -598,6 +846,22 @@ export default function BenchDetail() {
                   onClick={() => setGetAppOpen(true)}
                 >
                   Get App
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setNewAppOpen(true)}
+                >
+                  New App
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setAddSpaOpen(true)}
+                >
+                  Create SPA
                 </Button>
               </div>
               <AppList apps={data.apps} />
@@ -786,6 +1050,346 @@ export default function BenchDetail() {
                     type="button"
                     variant="outline"
                     onClick={() => handleGetAppOpenChange(false)}
+                  >
+                    Close
+                  </Button>
+                </DialogFooter>
+              ) : null}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* New App dialog */}
+      <Dialog open={newAppOpen} onOpenChange={handleNewAppOpenChange}>
+        <DialogContent
+          className="sm:max-w-lg"
+          showCloseButton={
+            !(newAppOperationId !== null && newAppStream.status === "running")
+          }
+          onPointerDownOutside={(event) => {
+            if (
+              newAppOperationId !== null &&
+              newAppStream.status === "running"
+            ) {
+              event.preventDefault()
+            }
+          }}
+          onEscapeKeyDown={(event) => {
+            if (
+              newAppOperationId !== null &&
+              newAppStream.status === "running"
+            ) {
+              event.preventDefault()
+            }
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Create new app</DialogTitle>
+            <DialogDescription>
+              Scaffold a new Frappe app in this bench using{" "}
+              <span className="font-mono text-xs">bench new-app</span>.
+            </DialogDescription>
+          </DialogHeader>
+          {newAppOperationId === null ? (
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="new-app-name">App Name</Label>
+                <Input
+                  id="new-app-name"
+                  value={newAppName}
+                  onChange={(event) => setNewAppName(event.target.value)}
+                  placeholder="my_custom_app"
+                  autoComplete="off"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Lowercase letters, digits, and underscores only.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="new-app-title">App Title</Label>
+                <Input
+                  id="new-app-title"
+                  value={newAppTitle}
+                  onChange={(event) => setNewAppTitle(event.target.value)}
+                  placeholder="My Custom App"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="new-app-description">App Description</Label>
+                <Input
+                  id="new-app-description"
+                  value={newAppDescription}
+                  onChange={(event) => setNewAppDescription(event.target.value)}
+                  placeholder="A brief description of the app"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="new-app-publisher">App Publisher</Label>
+                <Input
+                  id="new-app-publisher"
+                  value={newAppPublisher}
+                  onChange={(event) => setNewAppPublisher(event.target.value)}
+                  placeholder="Your Name or Company"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="new-app-email">App Email</Label>
+                <Input
+                  id="new-app-email"
+                  type="email"
+                  value={newAppEmail}
+                  onChange={(event) => setNewAppEmail(event.target.value)}
+                  placeholder="you@example.com"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="new-app-license">App License</Label>
+                <Select
+                  value={newAppLicense}
+                  onValueChange={(value) => setNewAppLicense(value as AppLicense)}
+                >
+                  <SelectTrigger id="new-app-license" className="w-full">
+                    <SelectValue placeholder="Select a license" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {APP_LICENSE_OPTIONS.map((license) => (
+                      <SelectItem key={license} value={license}>
+                        {license}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch
+                  id="new-app-github-workflow"
+                  checked={newAppGithubWorkflow}
+                  onCheckedChange={setNewAppGithubWorkflow}
+                />
+                <Label htmlFor="new-app-github-workflow" className="cursor-pointer">
+                  Create GitHub Workflow action for unittests
+                </Label>
+              </div>
+              {newAppError ? (
+                <p className="text-xs text-destructive">{newAppError}</p>
+              ) : null}
+              <DialogFooter>
+                <Button type="button" onClick={() => void handleNewAppSubmit()}>
+                  Create App
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <LogStream
+                operationId={newAppOperationId}
+                lines={newAppStream.lines}
+                status={newAppStream.status}
+                exitCode={newAppStream.exitCode}
+              />
+              {newAppStream.status !== "running" ? (
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleNewAppOpenChange(false)}
+                  >
+                    Close
+                  </Button>
+                </DialogFooter>
+              ) : null}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Add SPA dialog */}
+      <Dialog open={addSpaOpen} onOpenChange={handleAddSpaOpenChange}>
+        <DialogContent
+          className="sm:max-w-lg"
+          showCloseButton={
+            !(
+              (addSpaOperationId !== null && addSpaStream.status === "running") ||
+              (installDoppioOperationId !== null && installDoppioStream.status === "running")
+            )
+          }
+          onPointerDownOutside={(event) => {
+            if (
+              (addSpaOperationId !== null && addSpaStream.status === "running") ||
+              (installDoppioOperationId !== null && installDoppioStream.status === "running")
+            ) {
+              event.preventDefault()
+            }
+          }}
+          onEscapeKeyDown={(event) => {
+            if (
+              (addSpaOperationId !== null && addSpaStream.status === "running") ||
+              (installDoppioOperationId !== null && installDoppioStream.status === "running")
+            ) {
+              event.preventDefault()
+            }
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Create SPA</DialogTitle>
+            <DialogDescription>
+              {hasDoppio
+                ? "Scaffold a new Single Page Application using "
+                : "Doppio is required to create SPAs. "}
+              {hasDoppio ? (
+                <span className="font-mono text-xs">bench add-spa</span>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+          {!hasDoppio && installDoppioOperationId === null ? (
+            <div className="flex flex-col gap-4">
+              <p className="text-sm text-muted-foreground">
+                The <span className="font-medium">doppio</span> app is not installed in this bench.
+                Doppio enables you to create modern Single Page Applications (Vue or React)
+                within your Frappe apps.
+              </p>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleAddSpaOpenChange(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="button" onClick={() => void handleInstallDoppio()}>
+                  Install Doppio
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : installDoppioOperationId !== null ? (
+            <div className="flex flex-col gap-3">
+              <LogStream
+                operationId={installDoppioOperationId}
+                lines={installDoppioStream.lines}
+                status={installDoppioStream.status}
+                exitCode={installDoppioStream.exitCode}
+              />
+              {installDoppioStream.status !== "running" ? (
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleAddSpaOpenChange(false)}
+                  >
+                    Close
+                  </Button>
+                </DialogFooter>
+              ) : null}
+            </div>
+          ) : addSpaOperationId === null ? (
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="add-spa-name">Dashboard Name</Label>
+                <Input
+                  id="add-spa-name"
+                  value={addSpaName}
+                  onChange={(event) => setAddSpaName(event.target.value)}
+                  placeholder="my_dashboard"
+                  autoComplete="off"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Lowercase letters, digits, and underscores only.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="add-spa-app">App Name</Label>
+                <Select
+                  value={addSpaAppName}
+                  onValueChange={setAddSpaAppName}
+                >
+                  <SelectTrigger id="add-spa-app" className="w-full">
+                    <SelectValue placeholder="Select an app" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {data?.apps
+                      .filter((app) => app.name !== "frappe" && app.name !== "doppio")
+                      .map((app) => (
+                        <SelectItem key={app.name} value={app.name}>
+                          {app.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  The Frappe app where the SPA will be created.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="add-spa-framework">Framework</Label>
+                <Select
+                  value={addSpaFramework}
+                  onValueChange={(value) => setAddSpaFramework(value as SpaFramework)}
+                >
+                  <SelectTrigger id="add-spa-framework" className="w-full">
+                    <SelectValue placeholder="Select a framework" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SPA_FRAMEWORK_OPTIONS.map((framework) => (
+                      <SelectItem key={framework} value={framework}>
+                        {framework.charAt(0).toUpperCase() + framework.slice(1)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-3">
+                  <Switch
+                    id="add-spa-tailwind"
+                    checked={addSpaTailwind}
+                    onCheckedChange={setAddSpaTailwind}
+                  />
+                  <Label htmlFor="add-spa-tailwind" className="cursor-pointer">
+                    Include TailwindCSS
+                  </Label>
+                </div>
+                <p className="text-xs text-amber-600 dark:text-amber-500 ml-12">
+                  May fail with newer Vite versions due to a doppio bug.
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch
+                  id="add-spa-typescript"
+                  checked={addSpaTypescript}
+                  onCheckedChange={setAddSpaTypescript}
+                />
+                <Label htmlFor="add-spa-typescript" className="cursor-pointer">
+                  Include TypeScript
+                </Label>
+              </div>
+              {addSpaError ? (
+                <p className="text-xs text-destructive">{addSpaError}</p>
+              ) : null}
+              <DialogFooter>
+                <Button type="button" onClick={() => void handleAddSpaSubmit()}>
+                  Create SPA
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <LogStream
+                operationId={addSpaOperationId}
+                lines={addSpaStream.lines}
+                status={addSpaStream.status}
+                exitCode={addSpaStream.exitCode}
+              />
+              {addSpaStream.status !== "running" ? (
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleAddSpaOpenChange(false)}
                   >
                     Close
                   </Button>

@@ -544,6 +544,50 @@ export async function postOperationGetApp(
   return res.data
 }
 
+export type NewAppOperationBody = {
+  bench_name: string
+  app_name: string
+  app_title: string
+  app_description: string
+  app_publisher: string
+  app_email: string
+  app_license: string
+  create_github_workflow: boolean
+}
+
+export async function postOperationNewApp(
+  body: NewAppOperationBody,
+  serverId?: string,
+): Promise<OperationIdResponse> {
+  const res = await api.post<OperationIdResponse>(
+    "/api/operations/new-app",
+    body,
+    { params: withServer(serverId) },
+  )
+  return res.data
+}
+
+export type AddSpaOperationBody = {
+  bench_name: string
+  spa_name: string
+  app_name: string
+  framework: "vue" | "react"
+  use_tailwind: boolean
+  use_typescript: boolean
+}
+
+export async function postOperationAddSpa(
+  body: AddSpaOperationBody,
+  serverId?: string,
+): Promise<OperationIdResponse> {
+  const res = await api.post<OperationIdResponse>(
+    "/api/operations/add-spa",
+    body,
+    { params: withServer(serverId) },
+  )
+  return res.data
+}
+
 export type NewSiteOperationBody = {
   bench_name: string
   site_name: string
